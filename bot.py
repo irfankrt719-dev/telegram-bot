@@ -13,8 +13,8 @@ from telegram.ext import (
 )
 
 # ─── AYARLAR ────────────────────────────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "BURAYA_BOT_TOKEN_GIR")
-ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+ADMIN_ID  = int(os.environ.get("ADMIN_ID", "0"))
 
 BANKA_BILGILERI = """
 🏦 *Ödeme Bilgileri*
