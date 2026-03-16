@@ -13,8 +13,8 @@ from telegram.ext import (
 )
 
 # ─── AYARLAR ────────────────────────────────────────────────────────────────
-BOT_TOKEN = "8305672557:AAEKCypWX2FhFILlvgpAYuDNW1F8WdKE-5o"
-ADMIN_ID  = 8256022654  # ← Kendi Telegram ID'ni gir (@userinfobot'tan öğrenebilirsin)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+ADMIN_ID  = int(os.environ.get("ADMIN_ID", "0"))
 
 BANKA_BILGILERI = """
 🏦 *Ödeme Bilgileri*
