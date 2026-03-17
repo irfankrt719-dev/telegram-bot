@@ -70,9 +70,18 @@ def kaydet(dosya, data):
 # urun_havuzu yapisi:
 # { "uid1": "Skunk", "uid2": "Crystall", ... }
 
+VARSAYILAN_URUN_HAVUZU = {
+    "u_demo1": "Skunk",
+    "u_demo2": "Crystall",
+    "u_demo3": "Pollem"
+}
+
 aktif_siparisler = yukle(SIPARISLER_DOSYA, {})
 konumlar         = yukle(KONUMLAR_DOSYA, {})
-urun_havuzu      = yukle(URUN_HAVUZU_DOSYA, {})
+urun_havuzu      = yukle(URUN_HAVUZU_DOSYA, VARSAYILAN_URUN_HAVUZU)
+
+if not os.path.exists(URUN_HAVUZU_DOSYA):
+    kaydet(URUN_HAVUZU_DOSYA, urun_havuzu)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
