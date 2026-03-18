@@ -296,16 +296,40 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
         return
-    no = context.user_data.get("no")
+    no      = context.user_data.get("no")
+    il      = context.user_data.get("il", "?")
+    ilce    = context.user_data.get("ilce", "?")
+    urun_ad = context.user_data.get("urun_ad", "?")
+    gram    = context.user_data.get("gram", "?")
+    fiyat_v = context.user_data.get("fiyat", 0)
+
     if not no:
         for n, s in siparisler.items():
             if str(s["user_id"]) == str(uid) and s["durum"] == "beklemede":
-                no = n
+                no      = n
+                il      = s.get("il", "?")
+                ilce    = s.get("ilce", "?")
+                urun_ad = s.get("urun_ad", urun_ad)
+                gram    = s.get("gram", gram)
+                fiyat_v = s.get("fiyat", 0)
                 break
+
     if not no:
         await update.message.reply_text("Aktif siparisıniz yok. /start ile baslayin.")
         return
-    s  = siparisler.get(no, {})
+
+    if no not in siparisler:
+        siparisler[no] = {
+            "user_id": uid,
+            "il":      il,
+            "ilce":    ilce,
+            "urun":    f"{urun_ad} {gram}",
+            "urun_ad": urun_ad,
+            "gram":    gram,
+            "fiyat":   fiyat_v,
+            "durum":   "beklemede"
+        }
+
     kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}")]]
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
@@ -313,9 +337,9 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption=(
             f"Yeni Dekont!\n\n"
             f"No: {no}\n"
-            f"Il/Ilce: {s.get('il','?')}/{s.get('ilce','?')}\n"
-            f"Urun: {s.get('urun','?')}\n"
-            f"Fiyat: {fiyat_str(s.get('fiyat',0))}\n\n"
+            f"Il/Ilce: {il}/{ilce}\n"
+            f"Urun: {urun_ad} {gram}\n"
+            f"Fiyat: {fiyat_str(fiyat_v)}\n\n"
             f"Onaylamak icin butona bas:"
         ),
         reply_markup=InlineKeyboardMarkup(kb)
