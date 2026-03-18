@@ -573,6 +573,20 @@ async def metin_isle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Gecersiz fiyat! Sayi gir, örn: 150")
             return
 
+        # Yeni ürün adı (havuza ekle)
+        elif adim == "yeni_urun_ad":
+            uid = urun_id_olustur()
+            urun_havuzu[uid] = metin
+            kaydet(URUN_HAVUZU_DOSYA, urun_havuzu)
+            admin_islem[user_id].update({
+                "adim":     "gram_miktar",
+                "urun_uid": uid,
+                "urun_ad":  metin,
+                "gramlar":  {}
+            })
+            await update.message.reply_text(f"Urun '{metin}' eklendi!\n\nGram miktarini yaz (örn: 1g, 3.5g):")
+            return
+
         # Yeni il
         elif adim == "yeni_il":
             if metin not in konumlar:
@@ -741,7 +755,7 @@ def main():
 
     app.add_handler(CallbackQueryHandler(admin_callback,       pattern=r"^(admin_onayla:|admin_gram_ekle|admin_kaydet|admin_tamam|havuz_sec:|yeni_urun:|konum_urun_ekle:|yeni_konum_ekle:)"))
     app.add_handler(CallbackQueryHandler(konum_ekle_callback,  pattern=r"^(kekle_)"))
-    app.add_handler(CallbackQueryHandler(urun_havuzu_callback, pattern=r"^(havuz_)"))
+    app.add_handler(CallbackQueryHandler(urun_havuzu_callback, pattern=r"^(havuz_sil:|havuz_yeni_urun)"))
 
     app.add_handler(MessageHandler(filters.PHOTO,    foto_al))
     app.add_handler(MessageHandler(filters.LOCATION, konum_al))
