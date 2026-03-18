@@ -1,8 +1,8 @@
 """
-Telegram Sipariş Botu - Konum Bazlı + Merkezi Ürün Havuzu
-=========================================================
-Kurulum:  pip install python-telegram-bot --upgrade
-Çalıştır: python bot.py
+Telegram Sipariş Botu
+=====================
+Her konum: 1 foto + 1 koordinat + 1 ürün + 1 gram/fiyat
+Kullanılınca silinir.
 """
 
 import logging, json, os, time
@@ -12,756 +12,661 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters, ConversationHandler
 )
 
-# ─── AYARLAR ────────────────────────────────────────────────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "BURAYA_BOT_TOKEN_GIR")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "BURAYA_TOKEN")
 ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
 
-BANKA_BILGILERI = (
+BANKA = (
     "Odeme Bilgileri\n"
     "─────────────────\n"
     "Banka: Ziraat Bankasi\n"
     "Hesap Adi: Sirket Adi\n"
     "IBAN: TR00 0000 0000 0000 0000 0000 00\n\n"
-    "Aciklama kismina siparis numaranizi yazmayi unutmayin!"
+    "Aciklama kismina siparis numaranizi yazin!"
 )
 
-IL_SEC, ILCE_SEC, URUN_SEC, GRAM_SEC, ODEME = range(5)
+IL, ILCE, URUN, GRAM, ODEME = range(5)
+adm = {}
 
-admin_islem = {}
+S_DOSYA = "siparisler.json"
+K_DOSYA = "konumlar.json"
+H_DOSYA = "havuz.json"
 
-# ─── DOSYALAR ───────────────────────────────────────────────────────────────
-SIPARISLER_DOSYA = "siparisler.json"
-KONUMLAR_DOSYA   = "konumlar.json"
-URUN_HAVUZU_DOSYA = "urun_havuzu.json"
+HAVUZ_VARSAYILAN = {"h1": "Skunk", "h2": "Crystall", "h3": "Pollem"}
 
-def yukle(dosya, varsayilan):
-    if os.path.exists(dosya):
+def yukle(d, v):
+    if os.path.exists(d):
         try:
-            with open(dosya, "r", encoding="utf-8") as f:
+            with open(d, encoding="utf-8") as f:
                 return json.load(f)
         except:
-            return varsayilan
-    return varsayilan
+            return v
+    return v
 
-def kaydet(dosya, data):
-    with open(dosya, "w", encoding="utf-8") as f:
+def kaydet(d, data):
+    with open(d, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# konumlar yapisi:
-# {
-#   "Istanbul": {
-#     "Kadikoy": [
-#       {
-#         "id": "...",
-#         "lat": 40.99, "lon": 29.02,
-#         "foto_id": "...",
-#         "kullanildi": false,
-#         "urunler": {
-#           "havuz_urun_id": {
-#             "ad": "Skunk",
-#             "gramlar": { "1g": 150, "3.5g": 450 }
-#           }
-#         }
-#       }
-#     ]
-#   }
-# }
+siparisler = yukle(S_DOSYA, {})
+konumlar   = yukle(K_DOSYA, {})
+havuz      = yukle(H_DOSYA, HAVUZ_VARSAYILAN)
 
-# urun_havuzu yapisi:
-# { "uid1": "Skunk", "uid2": "Crystall", ... }
-
-VARSAYILAN_URUN_HAVUZU = {
-    "u_demo1": "Skunk",
-    "u_demo2": "Crystall",
-    "u_demo3": "Pollem"
-}
-
-aktif_siparisler = yukle(SIPARISLER_DOSYA, {})
-konumlar         = yukle(KONUMLAR_DOSYA, {})
-urun_havuzu      = yukle(URUN_HAVUZU_DOSYA, VARSAYILAN_URUN_HAVUZU)
-
-if not os.path.exists(URUN_HAVUZU_DOSYA):
-    kaydet(URUN_HAVUZU_DOSYA, urun_havuzu)
+if not os.path.exists(H_DOSYA):
+    kaydet(H_DOSYA, havuz)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ─── YARDIMCI ───────────────────────────────────────────────────────────────
-def siparis_no_olustur(user_id):
-    return f"SP{user_id % 10000:04d}{int(time.time()) % 10000:04d}"
+# ─── YARDIMCI ────────────────────────────────────────────────────────────────
+def sp_no(uid):
+    return f"SP{uid%10000:04d}{int(time.time())%10000:04d}"
 
-def urun_id_olustur():
-    return f"u{int(time.time())}"
-
-def konum_id_olustur():
+def k_id():
     return f"k{int(time.time())}"
 
-def ilce_musait_konum(il, ilce):
+def fiyat_str(f):
+    try:
+        f = float(f)
+        return str(int(f)) if f == int(f) else str(f)
+    except:
+        return str(f)
+
+def ilce_konumlari(il, ilce):
+    """İlçedeki aktif (silinmemiş, fotoğraflı, ürünlü) konumlar."""
+    return [k for k in konumlar.get(il, {}).get(ilce, [])
+            if not k.get("silindi") and k.get("foto_id") and k.get("urun")]
+
+def ilce_urunler(il, ilce):
+    """
+    İlçedeki aktif konumların ürünlerini topla.
+    { urun_adi: { gram: fiyat, ... } }
+    Aynı isimde ürün birleştirilir (tüm gramlar gösterilir).
+    """
+    sonuc = {}
+    for k in ilce_konumlari(il, ilce):
+        u = k["urun"]
+        ad = u["ad"]
+        if ad not in sonuc:
+            sonuc[ad] = {}
+        g = str(u["gram"])
+        sonuc[ad][g] = u["fiyat"]
+    return sonuc
+
+def ilce_konum_bul(il, ilce, urun_ad, gram):
+    """Belirtilen ürün+gram için ilk aktif konumu döner."""
     for k in konumlar.get(il, {}).get(ilce, []):
-        if not k.get("kullanildi") and k.get("foto_id") and k.get("urunler"):
+        if k.get("silindi"):
+            continue
+        u = k.get("urun", {})
+        if u.get("ad") == urun_ad and str(u.get("gram")) == str(gram):
             return k
     return None
 
-def ilce_urunleri_birlestir(il, ilce):
-    """İlçedeki tüm aktif konumların ürünlerini döner."""
-    sonuc = {}
-    for k in konumlar.get(il, {}).get(ilce, []):
-        if not k.get("kullanildi") and k.get("foto_id"):
-            for uid, u in k.get("urunler", {}).items():
-                if uid not in sonuc:
-                    sonuc[uid] = u
-    return sonuc
-
 def ilce_konum_sayisi(il, ilce):
-    return sum(1 for k in konumlar.get(il, {}).get(ilce, [])
-               if not k.get("kullanildi") and k.get("foto_id"))
+    return len(ilce_konumlari(il, ilce))
 
-# ─── MÜŞTERİ AKIŞI ──────────────────────────────────────────────────────────
+# ─── MÜŞTERİ AKIŞI ───────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    aktif_iller = [il for il, ilceler in konumlar.items()
-                   if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
-    if not aktif_iller:
+    aktif = [il for il, ilceler in konumlar.items()
+             if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
+    if not aktif:
         await update.message.reply_text(
-            "Su an hizmet verdigimiz bir bolge bulunmuyor.\nLutfen daha sonra tekrar deneyin."
+            "Su an hizmet verilen bolge yok.\nLutfen daha sonra tekrar deneyin."
         )
         return ConversationHandler.END
-    keyboard = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif_iller]
-    keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+    kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
+    kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
     await update.message.reply_text(
-        f"Merhaba {update.effective_user.first_name}!\n\nHizmet verdigimiz ili secin:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        f"Merhaba {update.effective_user.first_name}!\n\nIl secin:",
+        reply_markup=InlineKeyboardMarkup(kb)
     )
-    return IL_SEC
+    return IL
 
 async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "iptal":
-        await query.edit_message_text("Iptal edildi.")
+    q = update.callback_query
+    await q.answer()
+    if q.data == "iptal":
+        await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
-    il = query.data.split(":", 1)[1]
+    il = q.data.split(":", 1)[1]
     context.user_data["il"] = il
-    aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
+    aktif_ilceler = [ilce for ilce in konumlar.get(il, {})
+                     if ilce_konum_sayisi(il, ilce) > 0]
     if not aktif_ilceler:
-        await query.edit_message_text(f"{il} ilinde su an musait bolge yok.")
+        await q.edit_message_text(f"{il} ilinde aktif bolge yok.")
         return ConversationHandler.END
-    keyboard = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
-    keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
-    keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-    await query.edit_message_text(f"Il: {il}\n\nBolgenizi secin:", reply_markup=InlineKeyboardMarkup(keyboard))
-    return ILCE_SEC
+    kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
+    kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
+    kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+    await q.edit_message_text(f"Il: {il}\n\nBolge secin:", reply_markup=InlineKeyboardMarkup(kb))
+    return ILCE
 
 async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "iptal":
-        await query.edit_message_text("Iptal edildi.")
+    q = update.callback_query
+    await q.answer()
+    if q.data == "iptal":
+        await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
-    if query.data == "geri_il":
-        aktif_iller = [il for il, ilceler in konumlar.items()
-                       if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
-        keyboard = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif_iller]
-        keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await query.edit_message_text("Ili secin:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return IL_SEC
-    ilce = query.data.split(":", 1)[1]
+    if q.data == "geri_il":
+        aktif = [il for il, ilceler in konumlar.items()
+                 if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
+        kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Il secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return IL
+    ilce = q.data.split(":", 1)[1]
     il   = context.user_data["il"]
     context.user_data["ilce"] = ilce
-    urunler = ilce_urunleri_birlestir(il, ilce)
+    urunler = ilce_urunler(il, ilce)
     if not urunler:
-        await query.edit_message_text(f"{ilce} bolgesinde su an urun bulunmuyor.")
+        await q.edit_message_text(f"{ilce} bolgesinde urun bulunamadi.")
         return ConversationHandler.END
-    keyboard = [[InlineKeyboardButton(f"🍬 {u['ad']}", callback_data=f"urun:{uid}")] for uid, u in urunler.items()]
-    keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
-    keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-    await query.edit_message_text(f"Il: {il} / Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(keyboard))
-    return URUN_SEC
+    kb = [[InlineKeyboardButton(f"🍬 {ad}", callback_data=f"urun:{ad}")]
+          for ad in urunler.keys()]
+    kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
+    kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+    await q.edit_message_text(
+        f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+    return URUN
 
 async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "iptal":
-        await query.edit_message_text("Iptal edildi.")
+    q = update.callback_query
+    await q.answer()
+    if q.data == "iptal":
+        await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
-    if query.data == "geri_ilce":
+    if q.data == "geri_il":
         il = context.user_data["il"]
-        aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
-        keyboard = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
-        keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
-        keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await query.edit_message_text("Bolgenizi secin:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return ILCE_SEC
-    uid  = query.data.split(":", 1)[1]
-    il   = context.user_data["il"]
-    ilce = context.user_data["ilce"]
-    urunler = ilce_urunleri_birlestir(il, ilce)
-    urun    = urunler.get(uid)
-    if not urun:
-        await query.edit_message_text("Urun bulunamadi.")
-        return ConversationHandler.END
-    context.user_data["urun_id"] = uid
-    context.user_data["urun_ad"] = urun["ad"]
-    gramlar = urun.get("gramlar", {})
-    keyboard = [
-        [InlineKeyboardButton(f"{gram}  —  {fiyat}", callback_data=f"gram:{gram}:{fiyat}")]
-        for gram, fiyat in gramlar.items()
-    ]
-    keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_urun")])
-    keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-    await query.edit_message_text(
-        f"Il: {il} / Bolge: {ilce}\nUrun: {urun['ad']}\n\nMiktar secin:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        aktif_ilceler = [ilce for ilce in konumlar.get(il, {})
+                         if ilce_konum_sayisi(il, ilce) > 0]
+        kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Bolge secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return ILCE
+    urun_ad = q.data.split(":", 1)[1]
+    il      = context.user_data["il"]
+    ilce    = context.user_data["ilce"]
+    context.user_data["urun_ad"] = urun_ad
+    urunler = ilce_urunler(il, ilce)
+    gramlar = urunler.get(urun_ad, {})
+    kb = [[InlineKeyboardButton(f"{g}  —  {fiyat_str(f)}",
+                                callback_data=f"gram:{g}:{f}")]
+          for g, f in gramlar.items()]
+    kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
+    kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+    await q.edit_message_text(
+        f"Il: {il}  |  Bolge: {ilce}\nUrun: {urun_ad}\n\nMiktar secin:",
+        reply_markup=InlineKeyboardMarkup(kb)
     )
-    return GRAM_SEC
+    return GRAM
 
 async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "iptal":
-        await query.edit_message_text("Iptal edildi.")
+    q = update.callback_query
+    await q.answer()
+    if q.data == "iptal":
+        await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
-    if query.data == "geri_urun":
+    if q.data == "geri_ilce":
         il   = context.user_data["il"]
         ilce = context.user_data["ilce"]
-        urunler = ilce_urunleri_birlestir(il, ilce)
-        keyboard = [[InlineKeyboardButton(f"🍬 {u['ad']}", callback_data=f"urun:{uid}")] for uid, u in urunler.items()]
-        keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
-        keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await query.edit_message_text("Urun secin:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return URUN_SEC
-    parcalar = query.data.split(":")
-    gram     = parcalar[1]
-    fiyat    = float(parcalar[2])
+        urunler = ilce_urunler(il, ilce)
+        kb = [[InlineKeyboardButton(f"🍬 {ad}", callback_data=f"urun:{ad}")] for ad in urunler.keys()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Urun secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return URUN
+    p    = q.data.split(":")
+    gram = p[1]
+    fiyat = float(p[2])
     context.user_data["gram"]  = gram
     context.user_data["fiyat"] = fiyat
-    il       = context.user_data["il"]
-    ilce     = context.user_data["ilce"]
-    urun_ad  = context.user_data["urun_ad"]
-    siparis_no = siparis_no_olustur(update.effective_user.id)
-    context.user_data["siparis_no"] = siparis_no
+    il      = context.user_data["il"]
+    ilce    = context.user_data["ilce"]
+    urun_ad = context.user_data["urun_ad"]
+    no      = sp_no(update.effective_user.id)
+    context.user_data["no"] = no
     ozet = (
         f"Siparis Ozeti\n─────────────────\n"
-        f"Siparis No : {siparis_no}\n"
+        f"Siparis No : {no}\n"
         f"Il         : {il}\n"
         f"Bolge      : {ilce}\n"
         f"Urun       : {urun_ad}\n"
         f"Miktar     : {gram}\n"
-        f"Fiyat      : {fiyat}\n"
-        f"─────────────────\n\n{BANKA_BILGILERI}\n\n"
+        f"Fiyat      : {fiyat_str(fiyat)}\n"
+        f"─────────────────\n\n{BANKA}\n\n"
         f"Odemeyi yaptiktan sonra dekont fotografini gonderin."
     )
-    keyboard = [
-        [InlineKeyboardButton("Siparisi Onayla", callback_data="onayla")],
-        [InlineKeyboardButton("⬅️ Geri",         callback_data="geri_gram")],
-        [InlineKeyboardButton("❌ Iptal",         callback_data="iptal")],
+    kb = [
+        [InlineKeyboardButton("✅ Siparisi Onayla", callback_data="onayla")],
+        [InlineKeyboardButton("⬅️ Geri",            callback_data="geri_gram")],
+        [InlineKeyboardButton("❌ Iptal",            callback_data="iptal")],
     ]
-    await query.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(keyboard))
+    await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
     return ODEME
 
 async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "iptal":
-        await query.edit_message_text("Iptal edildi.")
+    q = update.callback_query
+    await q.answer()
+    if q.data == "iptal":
+        await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
-    if query.data == "geri_gram":
-        uid  = context.user_data["urun_id"]
-        il   = context.user_data["il"]
-        ilce = context.user_data["ilce"]
-        urunler = ilce_urunleri_birlestir(il, ilce)
-        urun    = urunler.get(uid, {})
-        gramlar = urun.get("gramlar", {})
-        keyboard = [
-            [InlineKeyboardButton(f"{gram}  —  {fiyat}", callback_data=f"gram:{gram}:{fiyat}")]
-            for gram, fiyat in gramlar.items()
-        ]
-        keyboard.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_urun")])
-        keyboard.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await query.edit_message_text("Miktar secin:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return GRAM_SEC
-    if query.data == "onayla":
-        siparis_no = context.user_data.get("siparis_no", "?")
-        aktif_siparisler[siparis_no] = {
+    if q.data == "geri_gram":
+        il      = context.user_data["il"]
+        ilce    = context.user_data["ilce"]
+        urun_ad = context.user_data["urun_ad"]
+        urunler = ilce_urunler(il, ilce)
+        gramlar = urunler.get(urun_ad, {})
+        kb = [[InlineKeyboardButton(f"{g}  —  {fiyat_str(f)}",
+                                    callback_data=f"gram:{g}:{f}")]
+              for g, f in gramlar.items()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Miktar secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return GRAM
+    if q.data == "onayla":
+        no = context.user_data.get("no", "?")
+        siparisler[no] = {
             "user_id": update.effective_user.id,
-            "il":      context.user_data.get("il"),
-            "ilce":    context.user_data.get("ilce"),
-            "urun":    f"{context.user_data.get('urun_ad')} {context.user_data.get('gram')}",
-            "fiyat":   context.user_data.get("fiyat"),
+            "il":      context.user_data["il"],
+            "ilce":    context.user_data["ilce"],
+            "urun":    f"{context.user_data['urun_ad']} {context.user_data['gram']}",
+            "urun_ad": context.user_data["urun_ad"],
+            "gram":    context.user_data["gram"],
+            "fiyat":   context.user_data["fiyat"],
             "durum":   "beklemede"
         }
-        kaydet(SIPARISLER_DOSYA, aktif_siparisler)
-        await query.edit_message_text(
-            f"Siparisıniz alindi!\n\nSiparis No: {siparis_no}\n\n"
-            f"Havale/EFT islemini gerceklestirip dekontu gonderin.\n\nTesekkurler!"
+        kaydet(S_DOSYA, siparisler)
+        await q.edit_message_text(
+            f"Siparisıniz alindi!\n\nSiparis No: {no}\n\n"
+            f"Havale/EFT islemini yapip dekontu gonderin.\n\nTesekkurler!"
         )
         return ConversationHandler.END
 
-# ─── DEKONT ─────────────────────────────────────────────────────────────────
+# ─── DEKONT ──────────────────────────────────────────────────────────────────
 async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id == ADMIN_ID:
-        if user_id in admin_islem and admin_islem[user_id].get("adim") == "foto":
-            admin_islem[user_id]["foto_id"] = update.message.photo[-1].file_id
-            admin_islem[user_id]["adim"]    = "konum"
+    uid = update.effective_user.id
+    if uid == ADMIN_ID:
+        if uid in adm and adm[uid].get("adim") == "foto":
+            adm[uid]["foto_id"] = update.message.photo[-1].file_id
+            adm[uid]["adim"]    = "konum"
             await update.message.reply_text("Fotograf kaydedildi!\n\nSimdi konumu gonder:")
         else:
             await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
         return
-    siparis_no = context.user_data.get("siparis_no")
-    if not siparis_no:
-        for no, s in aktif_siparisler.items():
-            if str(s["user_id"]) == str(user_id) and s["durum"] == "beklemede":
-                siparis_no = no
+    no = context.user_data.get("no")
+    if not no:
+        for n, s in siparisler.items():
+            if str(s["user_id"]) == str(uid) and s["durum"] == "beklemede":
+                no = n
                 break
-    if not siparis_no:
+    if not no:
         await update.message.reply_text("Aktif siparisıniz yok. /start ile baslayin.")
         return
-    siparis  = aktif_siparisler.get(siparis_no, {})
-    keyboard = [[InlineKeyboardButton(f"Onayla — {siparis_no}", callback_data=f"admin_onayla:{siparis_no}")]]
+    s  = siparisler.get(no, {})
+    kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}")]]
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
         photo=update.message.photo[-1].file_id,
         caption=(
-            f"Yeni Dekont!\n\nSiparis: {siparis_no}\n"
-            f"Il/Ilce: {siparis.get('il','?')}/{siparis.get('ilce','?')}\n"
-            f"Urun: {siparis.get('urun','?')}\n"
-            f"Fiyat: {siparis.get('fiyat','?')}\n\nOnaylamak icin butona bas:"
+            f"Yeni Dekont!\n\n"
+            f"No: {no}\n"
+            f"Il/Ilce: {s.get('il','?')}/{s.get('ilce','?')}\n"
+            f"Urun: {s.get('urun','?')}\n"
+            f"Fiyat: {fiyat_str(s.get('fiyat',0))}\n\n"
+            f"Onaylamak icin butona bas:"
         ),
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(kb)
     )
-    await update.message.reply_text(f"Dekontunuz alindi! Siparis No: {siparis_no}")
+    await update.message.reply_text(f"Dekontunuz alindi! Siparis No: {no}")
 
-# ─── KONUM GELDİĞİNDE ───────────────────────────────────────────────────────
+# ─── KONUM GELDİĞİNDE ────────────────────────────────────────────────────────
 async def konum_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+    uid = update.effective_user.id
+    if uid != ADMIN_ID:
         return
-    if user_id in admin_islem and admin_islem[user_id].get("adim") == "konum":
-        islem   = admin_islem[user_id]
-        il      = islem["il"]
-        ilce    = islem["ilce"]
-        foto_id = islem["foto_id"]
-        lat     = update.message.location.latitude
-        lon     = update.message.location.longitude
-        yeni_konum = {
-            "id":         konum_id_olustur(),
-            "lat":        lat,
-            "lon":        lon,
-            "foto_id":    foto_id,
-            "kullanildi": False,
-            "urunler":    {}
-        }
-        if il not in konumlar:
-            konumlar[il] = {}
-        if ilce not in konumlar[il]:
-            konumlar[il][ilce] = []
-        konumlar[il][ilce].append(yeni_konum)
-        kaydet(KONUMLAR_DOSYA, konumlar)
-        konum_idx = len(konumlar[il][ilce]) - 1
-        admin_islem[user_id] = {
-            "adim":      "urun_sec",
-            "il":        il,
-            "ilce":      ilce,
-            "konum_idx": konum_idx
-        }
-        await goster_urun_havuzu(update, user_id, il, ilce, konum_idx)
+    if uid not in adm or adm[uid].get("adim") != "konum":
+        await update.message.reply_text("Aktif konum ekleme islemi yok.")
         return
-    await update.message.reply_text("Konum alindi ama aktif islem yok.")
+    islem   = adm[uid]
+    il      = islem["il"]
+    ilce    = islem["ilce"]
+    foto_id = islem["foto_id"]
+    lat     = update.message.location.latitude
+    lon     = update.message.location.longitude
+    yeni = {
+        "id":      k_id(),
+        "lat":     lat,
+        "lon":     lon,
+        "foto_id": foto_id,
+        "silindi": False,
+        "urun":    {}
+    }
+    if il not in konumlar:
+        konumlar[il] = {}
+    if ilce not in konumlar[il]:
+        konumlar[il][ilce] = []
+    konumlar[il][ilce].append(yeni)
+    kaydet(K_DOSYA, konumlar)
+    kidx = len(konumlar[il][ilce]) - 1
+    adm[uid] = {"adim": "urun_sec", "il": il, "ilce": ilce, "kidx": kidx}
+    # Ürün havuzunu göster
+    kb = [[InlineKeyboardButton(f"🍬 {ad}", callback_data=f"hs:{hid}:{il}:{ilce}:{kidx}")]
+          for hid, ad in havuz.items()]
+    kb.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data=f"hu:{il}:{ilce}:{kidx}")])
+    await update.message.reply_text(
+        f"Konum kaydedildi!\n\nBu konumdaki urunu sec:",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
 
-async def goster_urun_havuzu(update_or_msg, user_id, il, ilce, konum_idx):
-    """Ürün havuzunu buton olarak göster."""
-    if not urun_havuzu:
-        keyboard = [[InlineKeyboardButton("➕ Yeni Urun Olustur", callback_data=f"yeni_urun:{il}:{ilce}:{konum_idx}")]]
-        mesaj = "Urun havuzu bos!\nYeni urun olusturun:"
-    else:
-        keyboard = [
-            [InlineKeyboardButton(f"🍬 {ad}", callback_data=f"havuz_sec:{uid}:{il}:{ilce}:{konum_idx}")]
-            for uid, ad in urun_havuzu.items()
-        ]
-        keyboard.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data=f"yeni_urun:{il}:{ilce}:{konum_idx}")])
-
-    konum_no = konum_idx + 1
-    mesaj = f"Konum #{konum_no} kaydedildi!\n\nBu konuma hangi urunu eklemek istiyorsun?"
-
-    if hasattr(update_or_msg, 'message'):
-        await update_or_msg.message.reply_text(mesaj, reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update_or_msg.reply_text(mesaj, reply_markup=InlineKeyboardMarkup(keyboard))
-
-# ─── ADMİN BUTON ────────────────────────────────────────────────────────────
-async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Yetkisiz!", show_alert=True)
+# ─── ADMİN CALLBACK ──────────────────────────────────────────────────────────
+async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer("Yetkisiz!", show_alert=True)
         return
-    await query.answer()
-    data = query.data
+    await q.answer()
+    d = q.data
 
-    # ── Havuzdan ürün seç ──
-    if data.startswith("havuz_sec:"):
-        parcalar  = data.split(":")
-        uid       = parcalar[1]
-        il        = parcalar[2]
-        ilce      = parcalar[3]
-        konum_idx = int(parcalar[4])
-        urun_ad   = urun_havuzu.get(uid, "")
-        admin_islem[ADMIN_ID] = {
-            "adim":      "gram_miktar",
-            "il":        il,
-            "ilce":      ilce,
-            "konum_idx": konum_idx,
-            "urun_uid":  uid,
-            "urun_ad":   urun_ad,
-            "gramlar":   {}
+    # Havuzdan ürün seç
+    if d.startswith("hs:"):
+        p    = d.split(":")
+        hid  = p[1]
+        il   = p[2]
+        ilce = p[3]
+        kidx = int(p[4])
+        adm[ADMIN_ID] = {
+            "adim": "gram", "il": il, "ilce": ilce,
+            "kidx": kidx, "urun_ad": havuz[hid]
         }
-        await query.edit_message_text(f"Urun: {urun_ad}\n\nGram miktarini yaz (örn: 1g, 3.5g, 7g):")
+        await q.edit_message_text(f"Urun: {havuz[hid]}\n\nGram miktarini yaz (örn: 1g, 3.5g, 7g):")
 
-    # ── Yeni ürün oluştur ──
-    elif data.startswith("yeni_urun:"):
-        parcalar  = data.split(":")
-        il        = parcalar[1]
-        ilce      = parcalar[2]
-        konum_idx = int(parcalar[3])
-        admin_islem[ADMIN_ID] = {
-            "adim":      "yeni_urun_ad",
-            "il":        il,
-            "ilce":      ilce,
-            "konum_idx": konum_idx,
-            "gramlar":   {}
-        }
-        await query.edit_message_text("Yeni urun adini yaz (örn: Skunk, Crystall):")
+    # Yeni ürün
+    elif d.startswith("hu:"):
+        p    = d.split(":")
+        il   = p[1]
+        ilce = p[2]
+        kidx = int(p[3])
+        adm[ADMIN_ID] = {"adim": "yeni_urun", "il": il, "ilce": ilce, "kidx": kidx}
+        await q.edit_message_text("Yeni urun adini yaz:")
 
-    # ── Gram devam ──
-    elif data == "admin_gram_ekle":
-        admin_islem[ADMIN_ID]["adim"] = "gram_miktar"
-        await query.edit_message_text("Yeni gram miktarini yaz:")
-
-    # ── Kaydet ──
-    elif data == "admin_kaydet":
-        islem     = admin_islem.get(ADMIN_ID, {})
-        il        = islem["il"]
-        ilce      = islem["ilce"]
-        konum_idx = islem["konum_idx"]
-        uid       = islem["urun_uid"]
-        urun_ad   = islem["urun_ad"]
-        gramlar   = islem["gramlar"]
-        konumlar[il][ilce][konum_idx]["urunler"][uid] = {"ad": urun_ad, "gramlar": gramlar}
-        kaydet(KONUMLAR_DOSYA, konumlar)
-        gram_metni = "\n".join([f"  {g}: {f}" for g, f in gramlar.items()])
-        keyboard = [
-            [InlineKeyboardButton("➕ Bu Konuma Baska Urun Ekle", callback_data=f"konum_urun_ekle:{il}:{ilce}:{konum_idx}")],
-            [InlineKeyboardButton("📍 Yeni Konum Ekle",           callback_data=f"yeni_konum_ekle:{il}:{ilce}")],
-            [InlineKeyboardButton("✅ Tamamlandi",                 callback_data="admin_tamam")],
-        ]
-        del admin_islem[ADMIN_ID]
-        kalan = ilce_konum_sayisi(il, ilce)
-        await query.edit_message_text(
-            f"Kaydedildi!\n\nIl: {il} / Ilce: {ilce}\nUrun: {urun_ad}\nGramlar:\n{gram_metni}\n\nBu ilcede {kalan} aktif konum var.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-    # ── Bu konuma başka ürün ekle ──
-    elif data.startswith("konum_urun_ekle:"):
-        parcalar  = data.split(":")
-        il        = parcalar[1]
-        ilce      = parcalar[2]
-        konum_idx = int(parcalar[3])
-        keyboard = [
-            [InlineKeyboardButton(f"🍬 {ad}", callback_data=f"havuz_sec:{uid}:{il}:{ilce}:{konum_idx}")]
-            for uid, ad in urun_havuzu.items()
-        ]
-        keyboard.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data=f"yeni_urun:{il}:{ilce}:{konum_idx}")])
-        await query.edit_message_text("Hangi urunu eklemek istiyorsun?", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    # ── Yeni konum ekle (aynı ilçeye) ──
-    elif data.startswith("yeni_konum_ekle:"):
-        parcalar = data.split(":")
-        il   = parcalar[1]
-        ilce = parcalar[2]
-        admin_islem[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
-        await query.edit_message_text(f"{il}/{ilce} icin yeni konum ekleniyor.\n\nFotografi gonder:")
-
-    elif data == "admin_tamam":
-        await query.edit_message_text("Tamamlandi! /konum_ekle ile yeni konum ekleyebilirsin.")
-
-    # ── Sipariş onayla ──
-    elif data.startswith("admin_onayla:"):
-        siparis_no = data.split(":")[1]
-        siparis    = aktif_siparisler.get(siparis_no)
-        if not siparis:
-            await query.edit_message_caption(f"{siparis_no} bulunamadi.")
+    # Sipariş onayla
+    elif d.startswith("onay:"):
+        no = d.split(":")[1]
+        s  = siparisler.get(no)
+        if not s:
+            await q.edit_message_caption(f"{no} bulunamadi.")
             return
-        if siparis["durum"] in ("isleniyor", "tamamlandi"):
-            await query.answer(f"Bu siparis zaten {siparis['durum']}!", show_alert=True)
+        if s["durum"] in ("isleniyor", "tamamlandi"):
+            await q.answer(f"Bu siparis zaten {s['durum']}!", show_alert=True)
             return
-        il   = siparis["il"]
-        ilce = siparis["ilce"]
-        konum = ilce_musait_konum(il, ilce)
-        if not konum:
-            await query.edit_message_caption(f"{il}/{ilce} bolgesinde musait konum kalmadi!\n/konum_ekle ile ekleyin.")
+        il      = s["il"]
+        ilce    = s["ilce"]
+        urun_ad = s["urun_ad"]
+        gram    = s["gram"]
+        k = ilce_konum_bul(il, ilce, urun_ad, gram)
+        if not k:
+            await q.edit_message_caption(
+                f"{il}/{ilce} bolgesinde bu urun icin musait konum kalmadi!\n"
+                f"/konum_ekle ile yeni konum ekleyin."
+            )
             return
-        aktif_siparisler[siparis_no]["durum"] = "isleniyor"
-        kaydet(SIPARISLER_DOSYA, aktif_siparisler)
-        musteri_id = siparis["user_id"]
+        siparisler[no]["durum"] = "isleniyor"
+        kaydet(S_DOSYA, siparisler)
+        mid = s["user_id"]
         await context.bot.send_photo(
-            chat_id=musteri_id, photo=konum["foto_id"],
-            caption=f"Siparisıniz hazirlandi!\n\nSiparis No: {siparis_no}\nAsagidaki konumdan teslim alabilirsiniz."
+            chat_id=mid, photo=k["foto_id"],
+            caption=f"Siparisıniz hazirlandi!\n\nSiparis No: {no}\nAsagidaki konumdan teslim alabilirsiniz."
         )
-        await context.bot.send_location(chat_id=musteri_id, latitude=konum["lat"], longitude=konum["lon"])
-        await context.bot.send_message(chat_id=musteri_id,
-            text=f"Siparisıniz teslimata hazir!\n\nSiparis No: {siparis_no}\n\nIyi gunler!")
-        for k in konumlar.get(il, {}).get(ilce, []):
-            if k["id"] == konum["id"]:
-                k["kullanildi"] = True
+        await context.bot.send_location(chat_id=mid, latitude=k["lat"], longitude=k["lon"])
+        await context.bot.send_message(
+            chat_id=mid,
+            text=f"Siparisıniz teslimata hazir!\n\nSiparis No: {no}\n\nIyi gunler!"
+        )
+        # Konumu sil
+        for km in konumlar.get(il, {}).get(ilce, []):
+            if km["id"] == k["id"]:
+                km["silindi"] = True
                 break
-        kaydet(KONUMLAR_DOSYA, konumlar)
-        aktif_siparisler[siparis_no]["durum"] = "tamamlandi"
-        kaydet(SIPARISLER_DOSYA, aktif_siparisler)
+        kaydet(K_DOSYA, konumlar)
+        siparisler[no]["durum"] = "tamamlandi"
+        kaydet(S_DOSYA, siparisler)
         kalan = ilce_konum_sayisi(il, ilce)
         uyari = f"\n\n{il}/{ilce} bolgesinde {kalan} konum kaldi!" if kalan <= 3 else ""
-        await query.edit_message_caption(f"Tamamlandi! {siparis_no}{uyari}")
+        await q.edit_message_caption(f"Tamamlandi! {no}{uyari}")
 
-# ─── ADMİN METİN ────────────────────────────────────────────────────────────
-async def metin_isle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    metin   = update.message.text.strip()
+    elif d == "tamam":
+        await q.edit_message_text("Tamamlandi! /konum_ekle ile yeni konum ekleyebilirsin.")
 
-    if user_id == ADMIN_ID and user_id in admin_islem:
-        islem = admin_islem[user_id]
-        adim  = islem.get("adim")
+# ─── ADMİN METİN ─────────────────────────────────────────────────────────────
+async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    txt = update.message.text.strip()
 
-        # Yeni ürün adı
-        if adim == "yeni_urun_ad":
-            uid = urun_id_olustur()
-            urun_havuzu[uid] = metin
-            kaydet(URUN_HAVUZU_DOSYA, urun_havuzu)
-            admin_islem[user_id].update({
-                "adim":     "gram_miktar",
-                "urun_uid": uid,
-                "urun_ad":  metin,
-                "gramlar":  {}
-            })
-            await update.message.reply_text(f"Urun '{metin}' havuza eklendi!\n\nGram miktarini yaz (örn: 1g):")
-            return
+    if uid == ADMIN_ID and uid in adm:
+        a = adm[uid]
 
-        # Gram miktarı
-        elif adim == "gram_miktar":
-            admin_islem[user_id]["gecici_gram"] = metin
-            admin_islem[user_id]["adim"]        = "gram_fiyat"
-            await update.message.reply_text(f"{metin} icin fiyati yaz:")
-            return
-
-        # Gram fiyatı
-        elif adim == "gram_fiyat":
-            try:
-                fiyat = float(metin.replace(",", "."))
-                gram  = admin_islem[user_id]["gecici_gram"]
-                admin_islem[user_id]["gramlar"][gram] = fiyat
-                admin_islem[user_id]["adim"] = "gram_devam"
-                gramlar    = admin_islem[user_id]["gramlar"]
-                gram_metni = "\n".join([f"  {g}: {f}" for g, f in gramlar.items()])
-                keyboard = [
-                    [InlineKeyboardButton("➕ Baska Gram Ekle", callback_data="admin_gram_ekle")],
-                    [InlineKeyboardButton("✅ Kaydet",           callback_data="admin_kaydet")],
-                ]
-                await update.message.reply_text(
-                    f"Eklendi!\n\nMevcut gramlar:\n{gram_metni}",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-            except ValueError:
-                await update.message.reply_text("Gecersiz fiyat! Sayi gir, örn: 150")
-            return
-
-        # Yeni ürün adı (havuza ekle)
-        elif adim == "yeni_urun_ad":
-            uid = urun_id_olustur()
-            urun_havuzu[uid] = metin
-            kaydet(URUN_HAVUZU_DOSYA, urun_havuzu)
-            admin_islem[user_id].update({
-                "adim":     "gram_miktar",
-                "urun_uid": uid,
-                "urun_ad":  metin,
-                "gramlar":  {}
-            })
-            await update.message.reply_text(f"Urun '{metin}' eklendi!\n\nGram miktarini yaz (örn: 1g, 3.5g):")
-            return
-
-        # Yeni il
-        elif adim == "yeni_il":
-            if metin not in konumlar:
-                konumlar[metin] = {}
-                kaydet(KONUMLAR_DOSYA, konumlar)
-            del admin_islem[user_id]
+        if a["adim"] == "yeni_il":
+            if txt not in konumlar:
+                konumlar[txt] = {}
+                kaydet(K_DOSYA, konumlar)
+            del adm[uid]
             iller = list(konumlar.keys())
-            keyboard = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"kekle_il:{il}")] for il in iller]
-            keyboard.append([InlineKeyboardButton("➕ Yeni Il Ekle", callback_data="kekle_yeni_il")])
-            await update.message.reply_text(f"'{metin}' eklendi! Ili sec:", reply_markup=InlineKeyboardMarkup(keyboard))
+            kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"ke_il:{il}")] for il in iller]
+            kb.append([InlineKeyboardButton("➕ Yeni Il", callback_data="ke_yeni_il")])
+            await update.message.reply_text(f"'{txt}' eklendi! Il sec:", reply_markup=InlineKeyboardMarkup(kb))
             return
 
-        # Yeni ilçe
-        elif adim == "yeni_ilce":
-            il = islem["il"]
+        elif a["adim"] == "yeni_ilce":
+            il = a["il"]
             if il not in konumlar:
                 konumlar[il] = {}
-            if metin not in konumlar[il]:
-                konumlar[il][metin] = []
-                kaydet(KONUMLAR_DOSYA, konumlar)
-            admin_islem[user_id] = {"adim": "foto", "il": il, "ilce": metin}
-            await update.message.reply_text(f"Ilce '{metin}' eklendi!\n\nFotografi gonder:")
+            if txt not in konumlar[il]:
+                konumlar[il][txt] = []
+                kaydet(K_DOSYA, konumlar)
+            adm[uid] = {"adim": "foto", "il": il, "ilce": txt}
+            await update.message.reply_text(f"'{txt}' eklendi!\n\nFotografi gonder:")
+            return
+
+        elif a["adim"] == "yeni_urun":
+            hid = f"h{int(time.time())}"
+            havuz[hid] = txt
+            kaydet(H_DOSYA, havuz)
+            adm[uid].update({"adim": "gram", "urun_ad": txt})
+            await update.message.reply_text(f"Urun '{txt}' eklendi!\n\nGram miktarini yaz (örn: 1g):")
+            return
+
+        elif a["adim"] == "gram":
+            a["gecici_gram"] = txt
+            a["adim"]        = "fiyat"
+            await update.message.reply_text(f"{txt} icin fiyati yaz:")
+            return
+
+        elif a["adim"] == "fiyat":
+            try:
+                f    = float(txt.replace(",", "."))
+                g    = a["gecici_gram"]
+                il   = a["il"]
+                ilce = a["ilce"]
+                kidx = a["kidx"]
+                urun_ad = a["urun_ad"]
+                # Konuma ürün bilgisini kaydet
+                konumlar[il][ilce][kidx]["urun"] = {
+                    "ad":    urun_ad,
+                    "gram":  g,
+                    "fiyat": f
+                }
+                kaydet(K_DOSYA, konumlar)
+                del adm[uid]
+                kalan = ilce_konum_sayisi(il, ilce)
+                kb = [
+                    [InlineKeyboardButton("📍 Ayni Ilceye Yeni Konum", callback_data=f"yeni_k:{il}:{ilce}")],
+                    [InlineKeyboardButton("✅ Tamamlandi",              callback_data="tamam")],
+                ]
+                await update.message.reply_text(
+                    f"Kaydedildi!\n\n"
+                    f"Il: {il} / Ilce: {ilce}\n"
+                    f"Urun: {urun_ad}\n"
+                    f"Miktar: {g}\n"
+                    f"Fiyat: {fiyat_str(f)}\n\n"
+                    f"Bu ilcede {kalan} aktif konum var.",
+                    reply_markup=InlineKeyboardMarkup(kb)
+                )
+            except ValueError:
+                await update.message.reply_text("Gecersiz fiyat! Sayi gir (örn: 150)")
+            return
+
+        elif a["adim"] == "havuz_ekle":
+            hid = f"h{int(time.time())}"
+            havuz[hid] = txt
+            kaydet(H_DOSYA, havuz)
+            del adm[uid]
+            await update.message.reply_text(f"'{txt}' havuza eklendi!")
             return
 
     await update.message.reply_text("Siparis vermek icin /start yazin.")
 
-# ─── ADMİN: /konum_ekle ─────────────────────────────────────────────────────
-async def konum_ekle_baslat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ─── ADMİN CALLBACK (konum ekle + havuz) ─────────────────────────────────────
+async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer("Yetkisiz!", show_alert=True)
+        return
+    await q.answer()
+    d = q.data
+
+    if d == "ke_yeni_il":
+        adm[ADMIN_ID] = {"adim": "yeni_il"}
+        await q.edit_message_text("Yeni il adini yaz:")
+
+    elif d.startswith("ke_il:"):
+        il     = d.split(":", 1)[1]
+        ilceler = list(konumlar.get(il, {}).keys())
+        kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{il}:{ilce}")] for ilce in ilceler]
+        kb.append([InlineKeyboardButton("➕ Yeni Ilce", callback_data=f"ke_yeni_ilce:{il}")])
+        await q.edit_message_text(f"Il: {il}\n\nIlce sec:", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("ke_yeni_ilce:"):
+        il = d.split(":", 1)[1]
+        adm[ADMIN_ID] = {"adim": "yeni_ilce", "il": il}
+        await q.edit_message_text(f"{il} icin ilce adini yaz:")
+
+    elif d.startswith("ke_ilce:"):
+        p    = d.split(":")
+        il   = p[1]
+        ilce = p[2]
+        adm[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
+        await q.edit_message_text(f"{il} / {ilce}\n\nFotografi gonder:")
+
+    elif d.startswith("yeni_k:"):
+        p    = d.split(":")
+        il   = p[1]
+        ilce = p[2]
+        adm[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
+        await q.edit_message_text(f"{il}/{ilce} icin yeni konum.\n\nFotografi gonder:")
+
+async def havuz_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer("Yetkisiz!", show_alert=True)
+        return
+    await q.answer()
+    d = q.data
+
+    if d == "h_ekle":
+        adm[ADMIN_ID] = {"adim": "havuz_ekle"}
+        await q.edit_message_text("Yeni urun adini yaz:")
+
+    elif d.startswith("h_sil:"):
+        hid = d.split(":")[1]
+        ad  = havuz.pop(hid, "")
+        kaydet(H_DOSYA, havuz)
+        kb = [[InlineKeyboardButton(f"🍬 {a}  🗑", callback_data=f"h_sil:{h}")] for h, a in havuz.items()]
+        kb.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="h_ekle")])
+        await q.edit_message_text(
+            f"'{ad}' silindi!\n\nUrun Havuzu:",
+            reply_markup=InlineKeyboardMarkup(kb) if havuz else None
+        )
+
+# ─── KOMUTLAR ────────────────────────────────────────────────────────────────
+async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     iller = list(konumlar.keys())
-    keyboard = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"kekle_il:{il}")] for il in iller]
-    keyboard.append([InlineKeyboardButton("➕ Yeni Il Ekle", callback_data="kekle_yeni_il")])
-    await update.message.reply_text("Konum eklenecek ili sec:", reply_markup=InlineKeyboardMarkup(keyboard))
+    kb    = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"ke_il:{il}")] for il in iller]
+    kb.append([InlineKeyboardButton("➕ Yeni Il", callback_data="ke_yeni_il")])
+    await update.message.reply_text("Il sec:", reply_markup=InlineKeyboardMarkup(kb))
 
-async def konum_ekle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Yetkisiz!", show_alert=True)
-        return
-    await query.answer()
-    data = query.data
-
-    if data == "kekle_yeni_il":
-        admin_islem[ADMIN_ID] = {"adim": "yeni_il"}
-        await query.edit_message_text("Yeni ilin adini yaz:")
-
-    elif data.startswith("kekle_il:"):
-        il     = data.split(":", 1)[1]
-        ilceler = list(konumlar.get(il, {}).keys())
-        keyboard = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"kekle_ilce:{il}:{ilce}")] for ilce in ilceler]
-        keyboard.append([InlineKeyboardButton("➕ Yeni Ilce Ekle", callback_data=f"kekle_yeni_ilce:{il}")])
-        await query.edit_message_text(f"Il: {il}\n\nIlce sec:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data.startswith("kekle_yeni_ilce:"):
-        il = data.split(":", 1)[1]
-        admin_islem[ADMIN_ID] = {"adim": "yeni_ilce", "il": il}
-        await query.edit_message_text(f"{il} icin yeni ilce adini yaz:")
-
-    elif data.startswith("kekle_ilce:"):
-        parcalar = data.split(":")
-        il   = parcalar[1]
-        ilce = parcalar[2]
-        admin_islem[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
-        await query.edit_message_text(f"Il: {il} / Ilce: {ilce}\n\nFotografi gonder:")
-
-# ─── ADMİN: /urunler (havuz yönetimi) ───────────────────────────────────────
-async def urun_havuzu_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def urunler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    if not urun_havuzu:
-        keyboard = [[InlineKeyboardButton("➕ Urun Ekle", callback_data="havuz_yeni_urun")]]
-        await update.message.reply_text("Urun havuzu bos.", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-    keyboard = [
-        [InlineKeyboardButton(f"🍬 {ad}  🗑", callback_data=f"havuz_sil:{uid}")]
-        for uid, ad in urun_havuzu.items()
-    ]
-    keyboard.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="havuz_yeni_urun")])
-    await update.message.reply_text("Urun Havuzu\n─────────────────\nSilmek icin urunun uzerine tikla:",
-                                     reply_markup=InlineKeyboardMarkup(keyboard))
+    kb = [[InlineKeyboardButton(f"🍬 {ad}  🗑", callback_data=f"h_sil:{hid}")] for hid, ad in havuz.items()]
+    kb.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="h_ekle")])
+    await update.message.reply_text(
+        "Urun Havuzu\n─────────────────\nSilmek icin uzerine tikla:",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
 
-async def urun_havuzu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Yetkisiz!", show_alert=True)
-        return
-    await query.answer()
-    data = query.data
-
-    if data == "havuz_yeni_urun":
-        admin_islem[ADMIN_ID] = {"adim": "havuz_urun_ad"}
-        await query.edit_message_text("Yeni urun adini yaz:")
-
-    elif data.startswith("havuz_sil:"):
-        uid = data.split(":")[1]
-        ad  = urun_havuzu.pop(uid, "")
-        kaydet(URUN_HAVUZU_DOSYA, urun_havuzu)
-        keyboard = [
-            [InlineKeyboardButton(f"🍬 {a}  🗑", callback_data=f"havuz_sil:{u}")]
-            for u, a in urun_havuzu.items()
-        ]
-        keyboard.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="havuz_yeni_urun")])
-        await query.edit_message_text(
-            f"'{ad}' silindi!\n\nUrun Havuzu:",
-            reply_markup=InlineKeyboardMarkup(keyboard) if urun_havuzu else None
-        )
-
-# ─── ADMİN: /konumlar ───────────────────────────────────────────────────────
 async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     if not konumlar:
         await update.message.reply_text("Hic konum yok. /konum_ekle ile ekle.")
         return
-    mesaj = "Konum Durumu\n─────────────────\n"
+    msg = "Konum Durumu\n─────────────────\n"
     for il, ilceler in konumlar.items():
-        mesaj += f"\n📍 {il}\n"
+        msg += f"\n📍 {il}\n"
         for ilce, liste in ilceler.items():
-            kalan = sum(1 for k in liste if not k.get("kullanildi") and k.get("foto_id"))
-            emoji = "🟢" if kalan > 3 else ("🟡" if kalan > 0 else "🔴")
-            mesaj += f"  {emoji} {ilce}: {kalan} aktif / {len(liste)} toplam\n"
-    await update.message.reply_text(mesaj)
+            kalan = ilce_konum_sayisi(il, ilce)
+            e = "🟢" if kalan > 3 else ("🟡" if kalan > 0 else "🔴")
+            msg += f"  {e} {ilce}: {kalan} aktif / {len(liste)} toplam\n"
+    await update.message.reply_text(msg)
 
-# ─── ADMİN: /siparisler ─────────────────────────────────────────────────────
-async def admin_siparisler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    if not aktif_siparisler:
+    if not siparisler:
         await update.message.reply_text("Henuz siparis yok.")
         return
-    durum_emoji = {"beklemede": "⏳", "isleniyor": "🔄", "tamamlandi": "✅"}
-    mesaj = "Tum Siparisler\n─────────────────\n"
-    for no, s in aktif_siparisler.items():
-        emoji = durum_emoji.get(s["durum"], "?")
-        mesaj += f"\n{emoji} {no}\n  {s.get('il','')}/{s.get('ilce','')} | {s['urun']} | {s['fiyat']}\n"
-    await update.message.reply_text(mesaj)
+    e = {"beklemede": "⏳", "isleniyor": "🔄", "tamamlandi": "✅"}
+    msg = "Siparisler\n─────────────────\n"
+    for no, s in siparisler.items():
+        msg += f"\n{e.get(s['durum'],'?')} {no}\n  {s.get('il','')}/{s.get('ilce','')} | {s['urun']} | {fiyat_str(s['fiyat'])}\n"
+    await update.message.reply_text(msg)
 
-# ─── İPTAL ──────────────────────────────────────────────────────────────────
 async def iptal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("Iptal edildi. /start ile yeniden baslayin.")
     return ConversationHandler.END
 
-# ─── ANA FONKSİYON ──────────────────────────────────────────────────────────
+# ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    conv_handler = ConversationHandler(
+    conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            IL_SEC:   [CallbackQueryHandler(il_sec)],
-            ILCE_SEC: [CallbackQueryHandler(ilce_sec)],
-            URUN_SEC: [CallbackQueryHandler(urun_sec)],
-            GRAM_SEC: [CallbackQueryHandler(gram_sec)],
-            ODEME:    [CallbackQueryHandler(odeme)],
+            IL:    [CallbackQueryHandler(il_sec)],
+            ILCE:  [CallbackQueryHandler(ilce_sec)],
+            URUN:  [CallbackQueryHandler(urun_sec)],
+            GRAM:  [CallbackQueryHandler(gram_sec)],
+            ODEME: [CallbackQueryHandler(odeme)],
         },
         fallbacks=[CommandHandler("iptal", iptal)],
     )
-
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("siparisler", admin_siparisler))
+    app.add_handler(conv)
+    app.add_handler(CommandHandler("siparisler", siparisler_goster))
     app.add_handler(CommandHandler("konumlar",   konumlar_goster))
-    app.add_handler(CommandHandler("konum_ekle", konum_ekle_baslat))
-    app.add_handler(CommandHandler("urunler",    urun_havuzu_goster))
-
-    app.add_handler(CallbackQueryHandler(admin_callback,       pattern=r"^(admin_onayla:|admin_gram_ekle|admin_kaydet|admin_tamam|havuz_sec:|yeni_urun:|konum_urun_ekle:|yeni_konum_ekle:)"))
-    app.add_handler(CallbackQueryHandler(konum_ekle_callback,  pattern=r"^(kekle_)"))
-    app.add_handler(CallbackQueryHandler(urun_havuzu_callback, pattern=r"^(havuz_sil:|havuz_yeni_urun)"))
-
+    app.add_handler(CommandHandler("konum_ekle", konum_ekle))
+    app.add_handler(CommandHandler("urunler",    urunler_goster))
+    app.add_handler(CallbackQueryHandler(adm_cb,   pattern=r"^(hs:|hu:|onay:|tamam)"))
+    app.add_handler(CallbackQueryHandler(ke_cb,    pattern=r"^(ke_|yeni_k:)"))
+    app.add_handler(CallbackQueryHandler(havuz_cb, pattern=r"^h_"))
     app.add_handler(MessageHandler(filters.PHOTO,    foto_al))
     app.add_handler(MessageHandler(filters.LOCATION, konum_al))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, metin_isle))
-
-    logger.info(f"Bot basladi. Siparis: {len(aktif_siparisler)} | Urun havuzu: {len(urun_havuzu)}")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, metin))
+    logger.info(f"Bot basladi. Siparis:{len(siparisler)} Havuz:{len(havuz)}")
     app.run_polling()
 
 if __name__ == "__main__":
