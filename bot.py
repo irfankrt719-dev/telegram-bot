@@ -767,14 +767,38 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not konumlar:
         await update.message.reply_text("Hic konum yok. /konum_ekle ile ekle.")
         return
-    msg = "Konum Durumu\n─────────────────\n"
+
     for il, ilceler in konumlar.items():
-        msg += f"\n📍 {il}\n"
         for ilce, liste in ilceler.items():
             kalan = ilce_konum_sayisi(il, ilce)
             e = "🟢" if kalan > 3 else ("🟡" if kalan > 0 else "🔴")
-            msg += f"  {e} {ilce}: {kalan} aktif / {len(liste)} toplam\n"
-    await update.message.reply_text(msg)
+            msg  = f"{e} {il} / {ilce}\n"
+            msg += f"Aktif: {kalan} / Toplam: {len(liste)}\n"
+            msg += "─────────────────\n"
+
+            aktif_no = 0
+            for k in liste:
+                if k.get("silindi"):
+                    continue
+                aktif_no += 1
+                urun = k.get("urun", {})
+                urun_ad = urun.get("ad", "?")
+                gram    = urun.get("gram", "?")
+                fiyat   = urun.get("fiyat", 0)
+                lat     = k.get("lat", 0)
+                lon     = k.get("lon", 0)
+                msg += (
+                    f"\n#{aktif_no} Konum\n"
+                    f"  Urun  : {urun_ad}\n"
+                    f"  Gram  : {gram}\n"
+                    f"  Fiyat : {fiyat_str(fiyat)}\n"
+                    f"  Konum : {lat:.4f}, {lon:.4f}\n"
+                )
+
+            if aktif_no == 0:
+                msg += "\nBu ilcede aktif konum yok.\n"
+
+            await update.message.reply_text(msg)
 
 async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -839,6 +863,126 @@ async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Sadece adresi yaz, sistem otomatik formatlar."
         )
 
+
+# ─── GÜN SONU RAPORU ─────────────────────────────────────────────────────────
+async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    bugun = time.strftime("%d.%m.%Y")
+    saat  = time.strftime("%H:%M")
+
+    toplam_siparis   = 0
+    tamamlanan       = 0
+    bekleyen         = 0
+    toplam_gelir     = 0.0
+    iban_gelir       = 0.0
+    trc20_gelir      = 0.0
+    iban_adet        = 0
+    trc20_adet       = 0
+    urun_sayac       = {}
+
+    for no, s in siparisler.items():
+        toplam_siparis += 1
+        durum  = s.get("durum", "")
+        fiyat  = float(s.get("fiyat", 0))
+        odeme  = s.get("odeme", "")
+        urun   = s.get("urun", "?")
+        if durum == "tamamlandi":
+            tamamlanan   += 1
+            toplam_gelir += fiyat
+            if odeme == "odeme_iban":
+                iban_gelir += fiyat
+                iban_adet  += 1
+            elif odeme == "odeme_trc20":
+                trc20_gelir += fiyat
+                trc20_adet  += 1
+            urun_sayac[urun] = urun_sayac.get(urun, 0) + 1
+        elif durum == "beklemede":
+            bekleyen += 1
+
+    toplam_konum     = 0
+    kalan_konum      = 0
+    kullanilan_konum = 0
+    konum_satirlar   = []
+
+    for il, ilceler in konumlar.items():
+        for ilce, liste in ilceler.items():
+            for k in liste:
+                toplam_konum += 1
+                if k.get("silindi"):
+                    kullanilan_konum += 1
+                else:
+                    kalan_konum += 1
+            aktif = ilce_konum_sayisi(il, ilce)
+            e = "🟢" if aktif > 3 else ("🟡" if aktif > 0 else "🔴")
+            konum_satirlar.append(f"  {e} {il}/{ilce}: {aktif} kalan / {len(liste)} toplam")
+
+    urun_satirlar = []
+    for urun, adet in sorted(urun_sayac.items(), key=lambda x: -x[1]):
+        urun_satirlar.append(f"  {urun}: {adet} adet")
+    if not urun_satirlar:
+        urun_satirlar = ["  Satilan urun yok"]
+
+    konum_txt = "\n".join(konum_satirlar) if konum_satirlar else "  Konum yok"
+    urun_txt  = "\n".join(urun_satirlar)
+
+    rapor  = "📊 GUN SONU RAPORU\n"
+    rapor += f"Tarih: {bugun} {saat}\n"
+    rapor += "═══════════════════\n\n"
+    rapor += "📦 SIPARIS OZETI\n"
+    rapor += "─────────────────\n"
+    rapor += f"Toplam Siparis : {toplam_siparis}\n"
+    rapor += f"Tamamlanan     : {tamamlanan}\n"
+    rapor += f"Bekleyen       : {bekleyen}\n\n"
+    rapor += "💰 GELIR OZETI\n"
+    rapor += "─────────────────\n"
+    rapor += f"Toplam Gelir   : {fiyat_str(toplam_gelir)}\n"
+    rapor += f"IBAN/Havale    : {fiyat_str(iban_gelir)} ({iban_adet} siparis)\n"
+    rapor += f"TRC20 (USDT)   : {fiyat_str(trc20_gelir)} ({trc20_adet} siparis)\n\n"
+    rapor += "🍬 URUN SATISLARI\n"
+    rapor += "─────────────────\n"
+    rapor += urun_txt + "\n\n"
+    rapor += "📍 KONUM DURUMU\n"
+    rapor += "─────────────────\n"
+    rapor += f"Toplam Konum   : {toplam_konum}\n"
+    rapor += f"Kalan          : {kalan_konum}\n"
+    rapor += f"Kullanilan     : {kullanilan_konum}\n\n"
+    rapor += konum_txt + "\n\n"
+    rapor += "═══════════════════"
+
+    kb = [[InlineKeyboardButton("🗑 Siparisleri Sifirla", callback_data="gunsonu_sifirla")]]
+    await update.message.reply_text(rapor, reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def gunsonu_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer("Yetkisiz!", show_alert=True)
+        return
+    await q.answer()
+
+    if q.data == "gunsonu_sifirla":
+        kb = [
+            [InlineKeyboardButton("✅ Evet, Sifirla", callback_data="gunsonu_evet")],
+            [InlineKeyboardButton("❌ Iptal",          callback_data="gunsonu_iptal")],
+        ]
+        await q.edit_message_text(
+            "Emin misin?\n\nTum siparisler silinecek.\nKonum ve urun bilgileri korunacak.",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+
+    elif q.data == "gunsonu_evet":
+        siparisler.clear()
+        kaydet(S_DOSYA, siparisler)
+        await q.edit_message_text(
+            f"Siparisler sifirland!\n\nTarih: {time.strftime('%d.%m.%Y %H:%M')}\nYeni gun basliyor."
+        )
+
+    elif q.data == "gunsonu_iptal":
+        await q.edit_message_text("Iptal edildi.")
+
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -861,6 +1005,10 @@ def main():
     app.add_handler(CommandHandler("urunler",    urunler_goster))
     app.add_handler(CommandHandler("odeme",      odeme_yonetim))
     app.add_handler(CallbackQueryHandler(odeme_cb, pattern=r"^ody_"))
+    app.add_handler(CommandHandler("gunsonu", gunsonu))
+    app.add_handler(CallbackQueryHandler(gunsonu_cb, pattern=r"^gunsonu_"))
+    app.add_handler(CommandHandler("gunsonu", gunsonu))
+    app.add_handler(CallbackQueryHandler(gunsonu_cb, pattern=r"^gunsonu_"))
     app.add_handler(CallbackQueryHandler(adm_cb,   pattern=r"^(hs:|hu:|onay:|tamam)"))
     app.add_handler(CallbackQueryHandler(ke_cb,    pattern=r"^(ke_|yeni_k:)"))
     app.add_handler(CallbackQueryHandler(havuz_cb, pattern=r"^h_"))
