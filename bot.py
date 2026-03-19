@@ -500,37 +500,43 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ilce = p[3]
         kidx = int(p[4])
         u    = havuz.get(hid, {})
-        ad   = u["ad"]
+        if not u or not isinstance(u, dict):
+            await q.answer("Urun bulunamadi!", show_alert=True)
+            return
+        ad      = u.get("ad", "?")
         gramlar = u.get("miktarlar", {})
-        adm[ADMIN_ID] = {"adim": "gramaj_sec", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad}
-        kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"ksg:{g}:{il}:{ilce}:{kidx}:{ad}")]
+        if not gramlar:
+            await q.answer("Bu urunde miktar tanimlanmamis!", show_alert=True)
+            return
+        adm[ADMIN_ID] = {"adim": "gramaj_sec", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad, "hid": hid}
+        kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"ksg:{hid}:{g}:{il}:{ilce}:{kidx}")]
               for g, f in gramlar.items()]
         await q.edit_message_text(f"Urun: {ad}\n\nGramaji sec:", reply_markup=InlineKeyboardMarkup(kb))
 
     # Konum için gramaj seç
     elif d.startswith("ksg:"):
         p    = d.split(":")
-        gram = p[1]
-        il   = p[2]
-        ilce = p[3]
-        kidx = int(p[4])
-        ad   = ":".join(p[5:])
-        # Havuzdan fiyatı al
-        fiyat_obj = {}
-        for hid, hu in havuz.items():
-            if isinstance(hu, dict) and hu.get("ad") == ad:
-                fiyat_obj = hu.get("miktarlar", {}).get(gram, {})
-                break
+        hid  = p[1]
+        gram = p[2]
+        il   = p[3]
+        ilce = p[4]
+        kidx = int(p[5])
+        # Havuzdan ürün ve fiyatı al
+        hu        = havuz.get(hid, {})
+        ad        = hu.get("ad", "?") if isinstance(hu, dict) else "?"
+        fiyat_obj = hu.get("miktarlar", {}).get(gram, {}) if isinstance(hu, dict) else {}
         konumlar[il][ilce][kidx]["urun"] = {"ad": ad, "gram": gram, "fiyat": fiyat_obj}
         kaydet(K_DOSYA, konumlar)
-        del adm[ADMIN_ID]
+        if ADMIN_ID in adm:
+            del adm[ADMIN_ID]
         kalan = ilce_konum_sayisi(il, ilce)
+        fiyat_goster = miktar_fiyat_str(fiyat_obj)
         kb = [
             [InlineKeyboardButton("📍 Ayni Ilceye Yeni Konum", callback_data=f"yeni_k:{il}:{ilce}")],
             [InlineKeyboardButton("✅ Tamamlandi",              callback_data="tamam")],
         ]
         await q.edit_message_text(
-            f"Kaydedildi!\n\n{il}/{ilce}\nUrun: {ad}\nGram: {gram}\nFiyat: {fiyat_str(f)}\n\n"
+            f"Kaydedildi!\n\n{il}/{ilce}\nUrun: {ad}\nGram: {gram}\nFiyat: {fiyat_goster}\n\n"
             f"Bu ilcede {kalan} aktif konum var.",
             reply_markup=InlineKeyboardMarkup(kb)
         )
