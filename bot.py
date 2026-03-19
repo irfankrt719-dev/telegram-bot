@@ -32,12 +32,16 @@ S_DOSYA = "siparisler.json"
 K_DOSYA = "konumlar.json"
 H_DOSYA = "havuz.json"
 O_DOSYA = "odeme.json"
+M_DOSYA = "musteriler.json"
+
+# Indirim ayarlari
+INDIRIM_HER_N_SIPARIS = 5   # Her 5 sipariste bir indirim
+INDIRIM_ORANI         = 10  # %10 indirim
 
 # Havuz yapısı: { hid: { "ad": "Skunk", "miktarlar": { "1g": 150, "3.5g": 450 } } }
 HAVUZ_VARSAYILAN = {
-    "h1": {"ad": "Skunk",    "tip": "gram",  "miktarlar": {"1g":     {"tl": 150,  "usd": 5},  "3.5g": {"tl": 450,  "usd": 14}, "7g": {"tl": 800,  "usd": 25}}},
-    "h2": {"ad": "Crystall", "tip": "tekli", "miktarlar": {"1 Adet": {"tl": 200,  "usd": 6},  "5 Adet": {"tl": 900, "usd": 28}}},
-    "h3": {"ad": "Pollem",   "tip": "kutu",  "miktarlar": {"1 Kutu": {"tl": 300,  "usd": 9},  "5 Kutu": {"tl": 1400,"usd": 43}}}
+    "h1": {"ad": "Deneme 1", "tip": "gram",  "miktarlar": {"2.5": {"tl": 4000.0, "usd": 80.0}, "5": {"tl": 7000.0, "usd": 150.0}}},
+    "h2": {"ad": "Deneme 2", "tip": "tekli", "miktarlar": {"Jilet": {"tl": 2000.0, "usd": 40.0}, "Kutu": {"tl": 7000.0, "usd": 150.0}}}
 }
 
 ODEME_VARSAYILAN = {
@@ -62,6 +66,8 @@ siparisler      = yukle(S_DOSYA, {})
 konumlar        = yukle(K_DOSYA, {})
 havuz           = yukle(H_DOSYA, HAVUZ_VARSAYILAN)
 odeme_bilgileri = yukle(O_DOSYA, ODEME_VARSAYILAN)
+musteriler      = yukle(M_DOSYA, {})
+# musteriler yapisi: { "user_id": { "tamamlanan": 5, "ad": "Ali" } }
 
 if not os.path.exists(H_DOSYA):
     kaydet(H_DOSYA, havuz)
@@ -154,6 +160,34 @@ def ilce_konum_bul(il, ilce, urun_ad, gram):
 
 def ilce_konum_sayisi(il, ilce):
     return len(ilce_aktif_konumlar(il, ilce))
+
+
+# ─── MÜŞTERİ TAKIP ───────────────────────────────────────────────────────────
+def musteri_tamamlanan(user_id):
+    return musteriler.get(str(user_id), {}).get("tamamlanan", 0)
+
+def musteri_indirim_var_mi(user_id):
+    t = musteri_tamamlanan(user_id)
+    return t > 0 and t % INDIRIM_HER_N_SIPARIS == 0
+
+def musteri_kalan_siparis(user_id):
+    t = musteri_tamamlanan(user_id)
+    kalan = INDIRIM_HER_N_SIPARIS - (t % INDIRIM_HER_N_SIPARIS)
+    return kalan if kalan != INDIRIM_HER_N_SIPARIS else 0
+
+def indirimli_fiyat(fiyat, user_id):
+    if musteri_indirim_var_mi(user_id):
+        return round(fiyat * (1 - INDIRIM_ORANI / 100), 2)
+    return fiyat
+
+def musteri_guncelle(user_id, ad=""):
+    uid = str(user_id)
+    if uid not in musteriler:
+        musteriler[uid] = {"tamamlanan": 0, "ad": ad}
+    if ad and not musteriler[uid].get("ad"):
+        musteriler[uid]["ad"] = ad
+    musteriler[uid]["tamamlanan"] += 1
+    kaydet(M_DOSYA, musteriler)
 
 # ─── MÜŞTERİ AKIŞI ───────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -281,6 +315,29 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["no"] = no
     tl_fiyat  = context.user_data.get("fiyat_tl", 0)
     usd_fiyat = context.user_data.get("fiyat_usd", 0)
+    uid       = update.effective_user.id
+
+    # İndirim kontrolü
+    indirim_aktif = musteri_indirim_var_mi(uid)
+    kalan         = musteri_kalan_siparis(uid)
+
+    if indirim_aktif:
+        indirimli_tl  = indirimli_fiyat(tl_fiyat, uid)
+        indirimli_usd = indirimli_fiyat(usd_fiyat, uid)
+        context.user_data["fiyat_tl"]  = indirimli_tl
+        context.user_data["fiyat_usd"] = indirimli_usd
+        indirim_txt = f"\n🎉 %{INDIRIM_ORANI} INDIRIM UYGULANDL!\n"
+        fiyat_satir = (
+            f"IBAN Fiyati   : ~~{fiyat_str(tl_fiyat)}~~ {fiyat_str(indirimli_tl)} TL\n"
+            f"TRC20 Fiyati  : ~~{fiyat_str(usd_fiyat)}~~ {fiyat_str(indirimli_usd)} USD\n"
+        )
+    else:
+        indirim_txt = f"\nSonraki indiriminize {kalan} siparis kaldi!\n" if kalan > 0 else ""
+        fiyat_satir = (
+            f"IBAN Fiyati   : {fiyat_str(tl_fiyat)} TL\n"
+            f"TRC20 Fiyati  : {fiyat_str(usd_fiyat)} USD\n"
+        )
+
     ozet = (
         f"Siparis Ozeti\n─────────────────\n"
         f"Siparis No : {no}\n"
@@ -289,9 +346,9 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Urun       : {urun_ad}\n"
         f"Miktar     : {gram}\n"
         f"─────────────────\n"
-        f"IBAN Fiyati   : {fiyat_str(tl_fiyat)} TL\n"
-        f"TRC20 Fiyati  : {fiyat_str(usd_fiyat)} USD\n"
-        f"─────────────────\n\n"
+        f"{fiyat_satir}"
+        f"─────────────────\n"
+        f"{indirim_txt}\n"
         f"Odeme yontemini secin:"
     )
     kb = [
@@ -315,7 +372,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         urun_ad = context.user_data["urun_ad"]
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
-        kb = [[InlineKeyboardButton(f"{g}  —  {fiyat_str(f)}", callback_data=f"gram:{g}:{f}")]
+        kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")]
               for g, f in gramlar.items()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
@@ -434,7 +491,9 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if no not in siparisler:
         siparisler[no] = {
-            "user_id": uid, "il": il, "ilce": ilce,
+            "user_id":    uid,
+            "musteri_ad": update.effective_user.first_name or "",
+            "il": il, "ilce": ilce,
             "urun": f"{urun_ad} {gram}", "urun_ad": urun_ad,
             "gram": gram, "fiyat": fiyat_v, "durum": "beklemede"
         }
@@ -585,9 +644,36 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(K_DOSYA, konumlar)
         siparisler[no]["durum"] = "tamamlandi"
         kaydet(S_DOSYA, siparisler)
+
+        # Müşteri takibini güncelle
+        musteri_ad = s.get("musteri_ad", "")
+        musteri_guncelle(mid, musteri_ad)
+        yeni_tamamlanan = musteri_tamamlanan(mid)
+        yeni_kalan      = musteri_kalan_siparis(mid)
+
+        # Müşteriye bildirim gönder
+        if yeni_kalan == 0:
+            # Bir sonraki sipariş indirimli olacak
+            await context.bot.send_message(
+                chat_id=mid,
+                text=(
+                    f"Tebrikler! {yeni_tamamlanan}. siparisini tamamladin!\n\n"
+                    f"Bir sonraki siparisinde %{INDIRIM_ORANI} indirim kazandin!"
+                )
+            )
+        elif yeni_kalan <= 2:
+            await context.bot.send_message(
+                chat_id=mid,
+                text=(
+                    f"%{INDIRIM_ORANI} indirim icin {yeni_kalan} siparisin kaldi!"
+                )
+            )
+
         kalan = ilce_konum_sayisi(il, ilce)
         uyari = f"\n\n{il}/{ilce} bolgesinde {kalan} konum kaldi!" if kalan <= 3 else ""
-        await q.edit_message_caption(f"Tamamlandi! {no}{uyari}")
+        await q.edit_message_caption(
+            f"Tamamlandi! {no}\nMusteri toplam: {yeni_tamamlanan} siparis{uyari}"
+        )
 
 # ─── ADMİN: /konum_ekle ──────────────────────────────────────────────────────
 async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -633,7 +719,7 @@ async def goster_havuz(q):
         ad        = u["ad"] if isinstance(u, dict) else u
         tip       = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         miktarlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
-        mik_txt   = "  ".join([f"{m}:{fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "Miktar yok"
+        mik_txt   = "  ".join([f"{m}: {miktar_fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "Miktar yok"
         msg += f"\n{ad} [{tip_label(tip)}]\n  {mik_txt}\n"
     msg += "\nDuzenlemek icin secin:"
     kb = [[InlineKeyboardButton(f"{u['ad'] if isinstance(u,dict) else u}", callback_data=f"u_detay:{hid}")]
@@ -685,7 +771,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ad        = u["ad"] if isinstance(u, dict) else u
         tip       = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         miktarlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
-        mik_txt   = "\n".join([f"  {m}: {fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "  Miktar yok"
+        mik_txt   = "\n".join([f"  {m}: {miktar_fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "  Miktar yok"
         kb = [
             [InlineKeyboardButton("➕ Miktar/Fiyat Ekle", callback_data=f"u_mik_ekle:{hid}")],
             [InlineKeyboardButton("➖ Miktar Sil",        callback_data=f"u_mik_sil:{hid}")],
@@ -723,7 +809,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not miktarlar:
             await q.answer("Silinecek miktar yok!", show_alert=True)
             return
-        kb = [[InlineKeyboardButton(f"🗑 {m} — {fiyat_str(f)}", callback_data=f"u_mik_sil2:{hid}:{m}")]
+        kb = [[InlineKeyboardButton(f"🗑 {m} — {miktar_fiyat_str(f)}", callback_data=f"u_mik_sil2:{hid}:{m}")]
               for m, f in miktarlar.items()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data=f"u_detay:{hid}")])
         await q.edit_message_text("Hangi miktari silmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
@@ -769,7 +855,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(H_DOSYA, havuz)
         if ADMIN_ID in adm:
             del adm[ADMIN_ID]
-        mik_txt = "  ".join([f"{m}:{fiyat_str(f)}" for m, f in miktarlar.items()])
+        mik_txt = "  ".join([f"{m}: {miktar_fiyat_str(f)}" for m, f in miktarlar.items()])
         await q.edit_message_text(
             f"'{ad}' [{tip_label(tip)}] eklendi!\n\n{mik_txt}\n\n/urunler ile urun listesini gorebilirsin."
         )
@@ -909,6 +995,24 @@ async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         adm[ADMIN_ID] = {"adim": "trc20_guncelle"}
         await q.edit_message_text("Yeni TRC20 adresini yaz:")
 
+
+# ─── ADMİN: /musteriler ──────────────────────────────────────────────────────
+async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not musteriler:
+        await update.message.reply_text("Henuz musteri yok.")
+        return
+    msg = "Musteri Listesi\n─────────────────\n"
+    for uid, m in sorted(musteriler.items(), key=lambda x: -x[1].get("tamamlanan", 0)):
+        t     = m.get("tamamlanan", 0)
+        ad    = m.get("ad", "?")
+        kalan = INDIRIM_HER_N_SIPARIS - (t % INDIRIM_HER_N_SIPARIS)
+        kalan = 0 if kalan == INDIRIM_HER_N_SIPARIS else kalan
+        indirim = "INDIRIM HAKKL VAR!" if t > 0 and t % INDIRIM_HER_N_SIPARIS == 0 else f"{kalan} siparis kaldi"
+        msg += f"\n👤 {ad} (ID:{uid})\n  Tamamlanan: {t} siparis\n  Durum: {indirim}\n"
+    await update.message.reply_text(msg)
+
 # ─── GÜN SONU ────────────────────────────────────────────────────────────────
 async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1015,7 +1119,7 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"\n\n#{aktif_no} Konum\n"
                     f"  Urun  : {u.get('ad','?')}\n"
                     f"  Gram  : {u.get('gram','?')}\n"
-                    f"  Fiyat : {fiyat_str(u.get('fiyat',0))}\n"
+                    f"  Fiyat : {miktar_fiyat_str(u.get('fiyat',{}))}\n"
                     f"  Konum : {k.get('lat',0):.4f}, {k.get('lon',0):.4f}"
                 )
             if aktif_no == 0:
@@ -1061,6 +1165,7 @@ def main():
     app.add_handler(CommandHandler("urunler",    urunler_goster))
     app.add_handler(CommandHandler("odeme",      odeme_yonetim))
     app.add_handler(CommandHandler("gunsonu",    gunsonu))
+    app.add_handler(CommandHandler("musteriler", musteriler_goster))
 
     app.add_handler(CallbackQueryHandler(adm_cb,         pattern=r"^(ks:|ksg:|yeni_k:|tamam|onay:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,          pattern=r"^ke_"))
