@@ -696,6 +696,34 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(H_DOSYA, havuz)
         await q.edit_message_text(f"'{ad}' urun havuzundan silindi!")
 
+    # ── Başka miktar ekle ──
+    elif d == "u_gramaj_devam":
+        tip = adm.get(ADMIN_ID, {}).get("tip", "gram")
+        adm[ADMIN_ID]["adim"] = "u_miktar"
+        if tip == "gram":
+            ipucu = "örn: 7g, 14g"
+        elif tip == "tekli":
+            ipucu = "örn: 10 Adet"
+        else:
+            ipucu = "örn: 3 Kutu"
+        await q.edit_message_text(f"Yeni miktari yaz ({ipucu}):")
+
+    # ── Kaydet ──
+    elif d == "u_gramaj_kaydet":
+        islem    = adm.get(ADMIN_ID, {})
+        ad       = islem.get("urun_ad", "")
+        hid      = islem.get("hid", f"h{int(time.time())}")
+        tip      = islem.get("tip", "gram")
+        miktarlar = islem.get("miktarlar", {})
+        havuz[hid] = {"ad": ad, "tip": tip, "miktarlar": miktarlar}
+        kaydet(H_DOSYA, havuz)
+        if ADMIN_ID in adm:
+            del adm[ADMIN_ID]
+        mik_txt = "  ".join([f"{m}:{fiyat_str(f)}" for m, f in miktarlar.items()])
+        await q.edit_message_text(
+            f"'{ad}' [{tip_label(tip)}] eklendi!\n\n{mik_txt}\n\n/urunler ile urun listesini gorebilirsin."
+        )
+
 
 # ─── ADMİN METİN ─────────────────────────────────────────────────────────────
 async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -788,34 +816,6 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Siparis vermek icin /start yazin.")
 
-async def urun_gramaj_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
-        await q.answer("Yetkisiz!", show_alert=True)
-        return
-    await q.answer()
-
-    if q.data == "u_gramaj_devam":
-        tip = adm[ADMIN_ID].get("tip", "gram")
-        adm[ADMIN_ID]["adim"] = "u_miktar"
-        if tip == "gram":
-            ipucu = "örn: 7g, 14g"
-        elif tip == "tekli":
-            ipucu = "örn: 10 Adet"
-        else:
-            ipucu = "örn: 3 Kutu"
-        await q.edit_message_text(f"Yeni miktari yaz ({ipucu}):")
-
-    elif q.data == "u_gramaj_kaydet":
-        islem   = adm.get(ADMIN_ID, {})
-        ad      = islem.get("urun_ad", "")
-        hid     = islem.get("hid", f"h{int(time.time())}")
-        gramlar = islem.get("miktarlar", {})
-        havuz[hid] = {"ad": ad, "miktarlar": gramlar}
-        kaydet(H_DOSYA, havuz)
-        del adm[ADMIN_ID]
-        gram_txt = "  ".join([f"{g}:{fiyat_str(f)}" for g, f in gramlar.items()])
-        await q.edit_message_text(f"'{ad}' eklendi!\n\n{gram_txt}")
 
 # ─── ADMİN: /odeme ───────────────────────────────────────────────────────────
 async def odeme_yonetim(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1003,7 +1003,6 @@ def main():
     app.add_handler(CallbackQueryHandler(adm_cb,         pattern=r"^(ks:|ksg:|yeni_k:|tamam|onay:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,          pattern=r"^ke_"))
     app.add_handler(CallbackQueryHandler(urun_cb,        pattern=r"^u_"))
-    app.add_handler(CallbackQueryHandler(urun_gramaj_cb, pattern=r"^u_gramaj_"))
     app.add_handler(CallbackQueryHandler(odeme_cb,       pattern=r"^ody_"))
     app.add_handler(CallbackQueryHandler(gunsonu_cb,     pattern=r"^gunsonu_"))
 
