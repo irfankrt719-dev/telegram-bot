@@ -15,16 +15,47 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "BURAYA_TOKEN")
 ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
 
-BANKA = (
-    "Odeme Bilgileri\n"
-    "─────────────────\n"
-    "Banka: Ziraat Bankasi\n"
-    "Hesap Adi: Sirket Adi\n"
-    "IBAN: TR00 0000 0000 0000 0000 0000 00\n\n"
-    "Aciklama kismina siparis numaranizi yazin!"
-)
+O_DOSYA = "odeme.json"
 
-IL, ILCE, URUN, GRAM, ODEME = range(5)
+ODEME_VARSAYILAN = {
+    "iban": (
+        "Odeme Yontemi: IBAN / Havale\n"
+        "─────────────────\n"
+        "Banka: Ziraat Bankasi\n"
+        "Hesap Adi: Sirket Adi\n"
+        "IBAN: TR00 0000 0000 0000 0000 0000 00\n\n"
+        "Aciklama kismina siparis numaranizi yazin!"
+    ),
+    "trc20": (
+        "Odeme Yontemi: TRC20 (USDT)\n"
+        "─────────────────\n"
+        "Adres: BURAYA_TRC20_ADRESINIZI_YAZIN\n\n"
+        "Gondermeden once adresi kontrol edin!"
+    )
+}
+
+def odeme_bilgi_yukle():
+    if os.path.exists(O_DOSYA):
+        try:
+            with open(O_DOSYA, encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return ODEME_VARSAYILAN.copy()
+    return ODEME_VARSAYILAN.copy()
+
+def odeme_bilgi_kaydet(data):
+    with open(O_DOSYA, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+odeme_bilgileri = odeme_bilgi_yukle()
+
+def IBAN_BILGI():
+    return odeme_bilgileri.get("iban", ODEME_VARSAYILAN["iban"])
+
+def TRC20_BILGI():
+    return odeme_bilgileri.get("trc20", ODEME_VARSAYILAN["trc20"])
+
+IL, ILCE, URUN, GRAM, ODEME_SEC, ODEME = range(6)
 adm = {}
 
 S_DOSYA = "siparisler.json"
@@ -236,16 +267,61 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Urun       : {urun_ad}\n"
         f"Miktar     : {gram}\n"
         f"Fiyat      : {fiyat_str(fiyat)}\n"
-        f"─────────────────\n\n{BANKA}\n\n"
-        f"Odemeyi yaptiktan sonra dekont fotografini gonderin."
+        f"─────────────────\n\n"
+        f"Odeme yontemini secin:"
     )
     kb = [
-        [InlineKeyboardButton("✅ Siparisi Onayla", callback_data="onayla")],
+        [InlineKeyboardButton("🏦 IBAN / Havale",  callback_data="odeme_iban")],
+        [InlineKeyboardButton("💎 TRC20 (USDT)",   callback_data="odeme_trc20")],
         [InlineKeyboardButton("⬅️ Geri",            callback_data="geri_gram")],
         [InlineKeyboardButton("❌ Iptal",            callback_data="iptal")],
     ]
     await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
-    return ODEME
+    return ODEME_SEC
+
+async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if q.data == "iptal":
+        await q.edit_message_text("Iptal edildi.")
+        return ConversationHandler.END
+    if q.data == "geri_gram":
+        il      = context.user_data["il"]
+        ilce    = context.user_data["ilce"]
+        urun_ad = context.user_data["urun_ad"]
+        urunler = ilce_urunler(il, ilce)
+        gramlar = urunler.get(urun_ad, {})
+        kb = [[InlineKeyboardButton(f"{g}  —  {fiyat_str(f)}",
+                                    callback_data=f"gram:{g}:{f}")]
+              for g, f in gramlar.items()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Miktar secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return GRAM
+    if q.data in ("odeme_iban", "odeme_trc20"):
+        yontem = q.data
+        context.user_data["odeme_yontemi"] = yontem
+        no      = context.user_data.get("no", "?")
+        urun_ad = context.user_data.get("urun_ad", "?")
+        gram    = context.user_data.get("gram", "?")
+        fiyat   = context.user_data.get("fiyat", 0)
+        bilgi   = IBAN_BILGI() if yontem == "odeme_iban" else TRC20_BILGI()
+        ozet = (
+            f"Siparis Ozeti\n─────────────────\n"
+            f"Siparis No : {no}\n"
+            f"Urun       : {urun_ad} {gram}\n"
+            f"Fiyat      : {fiyat_str(fiyat)}\n"
+            f"─────────────────\n\n"
+            f"{bilgi}\n\n"
+            f"Odemeyi yaptiktan sonra dekont fotografini gonderin."
+        )
+        kb = [
+            [InlineKeyboardButton("✅ Siparisi Onayla", callback_data="onayla")],
+            [InlineKeyboardButton("⬅️ Geri",            callback_data="geri_odeme_sec")],
+            [InlineKeyboardButton("❌ Iptal",            callback_data="iptal")],
+        ]
+        await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        return ODEME
 
 async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -253,6 +329,32 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
+    if q.data == "geri_odeme_sec":
+        no      = context.user_data.get("no", "?")
+        urun_ad = context.user_data.get("urun_ad", "?")
+        gram    = context.user_data.get("gram", "?")
+        fiyat   = context.user_data.get("fiyat", 0)
+        il      = context.user_data.get("il", "?")
+        ilce    = context.user_data.get("ilce", "?")
+        ozet = (
+            f"Siparis Ozeti\n─────────────────\n"
+            f"Siparis No : {no}\n"
+            f"Il         : {il}\n"
+            f"Bolge      : {ilce}\n"
+            f"Urun       : {urun_ad}\n"
+            f"Miktar     : {gram}\n"
+            f"Fiyat      : {fiyat_str(fiyat)}\n"
+            f"─────────────────\n\n"
+            f"Odeme yontemini secin:"
+        )
+        kb = [
+            [InlineKeyboardButton("🏦 IBAN / Havale",  callback_data="odeme_iban")],
+            [InlineKeyboardButton("💎 TRC20 (USDT)",   callback_data="odeme_trc20")],
+            [InlineKeyboardButton("⬅️ Geri",            callback_data="geri_gram")],
+            [InlineKeyboardButton("❌ Iptal",            callback_data="iptal")],
+        ]
+        await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        return ODEME_SEC
     if q.data == "geri_gram":
         il      = context.user_data["il"]
         ilce    = context.user_data["ilce"]
@@ -276,12 +378,15 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "urun_ad": context.user_data["urun_ad"],
             "gram":    context.user_data["gram"],
             "fiyat":   context.user_data["fiyat"],
+            "odeme":   context.user_data.get("odeme_yontemi", "?"),
             "durum":   "beklemede"
         }
         kaydet(S_DOSYA, siparisler)
+        yontem_txt = "Havale/EFT" if context.user_data.get("odeme_yontemi") == "odeme_iban" else "TRC20 (USDT)"
         await q.edit_message_text(
             f"Siparisıniz alindi!\n\nSiparis No: {no}\n\n"
-            f"Havale/EFT islemini yapip dekontu gonderin.\n\nTesekkurler!"
+            f"Odeme yontemi: {yontem_txt}\n"
+            f"Odemeyi yapip dekontu gonderin.\n\nTesekkurler!"
         )
         return ConversationHandler.END
 
@@ -550,6 +655,29 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"'{txt}' havuza eklendi!")
             return
 
+        elif a["adim"] == "iban_guncelle":
+            odeme_bilgileri["iban"] = (
+                "Odeme Yontemi: IBAN / Havale\n"
+                "─────────────────\n"
+                + txt
+            )
+            odeme_bilgi_kaydet(odeme_bilgileri)
+            del adm[uid]
+            await update.message.reply_text("IBAN bilgileri guncellendi!")
+            return
+
+        elif a["adim"] == "trc20_guncelle":
+            odeme_bilgileri["trc20"] = (
+                "Odeme Yontemi: TRC20 (USDT)\n"
+                "─────────────────\n"
+                "Adres: " + txt + "\n\n"
+                "Gondermeden once adresi kontrol edin!"
+            )
+            odeme_bilgi_kaydet(odeme_bilgileri)
+            del adm[uid]
+            await update.message.reply_text("TRC20 adresi guncellendi!")
+            return
+
     await update.message.reply_text("Siparis vermek icin /start yazin.")
 
 # ─── ADMİN CALLBACK (konum ekle + havuz) ─────────────────────────────────────
@@ -665,6 +793,52 @@ async def iptal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Iptal edildi. /start ile yeniden baslayin.")
     return ConversationHandler.END
 
+
+# ─── ADMİN: /odeme ───────────────────────────────────────────────────────────
+async def odeme_yonetim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    kb = [
+        [InlineKeyboardButton("🏦 IBAN Bilgilerini Duzenle",  callback_data="ody_iban")],
+        [InlineKeyboardButton("💎 TRC20 Adresini Duzenle",    callback_data="ody_trc20")],
+    ]
+    iban  = odeme_bilgileri.get("iban", "")
+    trc20 = odeme_bilgileri.get("trc20", "")
+    await update.message.reply_text(
+        f"Odeme Bilgileri Yonetimi\n─────────────────\n\n"
+        f"Mevcut IBAN:\n{iban}\n\n"
+        f"─────────────────\n\n"
+        f"Mevcut TRC20:\n{trc20}\n\n"
+        f"─────────────────\n"
+        f"Duzenlemek istedigin yontemi sec:",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+
+async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer("Yetkisiz!", show_alert=True)
+        return
+    await q.answer()
+    d = q.data
+
+    if d == "ody_iban":
+        adm[ADMIN_ID] = {"adim": "iban_guncelle"}
+        await q.edit_message_text(
+            "Yeni IBAN bilgilerini yaz:\n\n"
+            "Ornek:\n"
+            "Banka: Ziraat Bankasi\n"
+            "Hesap Adi: Ad Soyad\n"
+            "IBAN: TR00 0000 0000 0000 0000 0000 00\n\n"
+            "Aciklama kismina siparis numaranizi yazin!"
+        )
+    elif d == "ody_trc20":
+        adm[ADMIN_ID] = {"adim": "trc20_guncelle"}
+        await q.edit_message_text(
+            "Yeni TRC20 (USDT) adresini yaz:\n\n"
+            "Sadece adresi yaz, sistem otomatik formatlar."
+        )
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -674,8 +848,9 @@ def main():
             IL:    [CallbackQueryHandler(il_sec)],
             ILCE:  [CallbackQueryHandler(ilce_sec)],
             URUN:  [CallbackQueryHandler(urun_sec)],
-            GRAM:  [CallbackQueryHandler(gram_sec)],
-            ODEME: [CallbackQueryHandler(odeme)],
+            GRAM:      [CallbackQueryHandler(gram_sec)],
+            ODEME_SEC: [CallbackQueryHandler(odeme_sec)],
+            ODEME:     [CallbackQueryHandler(odeme)],
         },
         fallbacks=[CommandHandler("iptal", iptal)],
     )
@@ -684,6 +859,8 @@ def main():
     app.add_handler(CommandHandler("konumlar",   konumlar_goster))
     app.add_handler(CommandHandler("konum_ekle", konum_ekle))
     app.add_handler(CommandHandler("urunler",    urunler_goster))
+    app.add_handler(CommandHandler("odeme",      odeme_yonetim))
+    app.add_handler(CallbackQueryHandler(odeme_cb, pattern=r"^ody_"))
     app.add_handler(CallbackQueryHandler(adm_cb,   pattern=r"^(hs:|hu:|onay:|tamam)"))
     app.add_handler(CallbackQueryHandler(ke_cb,    pattern=r"^(ke_|yeni_k:)"))
     app.add_handler(CallbackQueryHandler(havuz_cb, pattern=r"^h_"))
