@@ -35,9 +35,9 @@ O_DOSYA = "odeme.json"
 
 # Havuz yapısı: { hid: { "ad": "Skunk", "miktarlar": { "1g": 150, "3.5g": 450 } } }
 HAVUZ_VARSAYILAN = {
-    "h1": {"ad": "Skunk",    "tip": "gram",  "miktarlar": {"1g": 150, "3.5g": 450, "7g": 800}},
-    "h2": {"ad": "Crystall", "tip": "tekli", "miktarlar": {"1 Adet": 200, "5 Adet": 900}},
-    "h3": {"ad": "Pollem",   "tip": "kutu",  "miktarlar": {"1 Kutu": 300, "5 Kutu": 1400}}
+    "h1": {"ad": "Skunk",    "tip": "gram",  "miktarlar": {"1g":     {"tl": 150,  "usd": 5},  "3.5g": {"tl": 450,  "usd": 14}, "7g": {"tl": 800,  "usd": 25}}},
+    "h2": {"ad": "Crystall", "tip": "tekli", "miktarlar": {"1 Adet": {"tl": 200,  "usd": 6},  "5 Adet": {"tl": 900, "usd": 28}}},
+    "h3": {"ad": "Pollem",   "tip": "kutu",  "miktarlar": {"1 Kutu": {"tl": 300,  "usd": 9},  "5 Kutu": {"tl": 1400,"usd": 43}}}
 }
 
 ODEME_VARSAYILAN = {
@@ -85,6 +85,24 @@ def fiyat_str(f):
     except:
         return str(f)
 
+def miktar_fiyat_str(fiyat_obj):
+    """{ tl: 150, usd: 5 } veya eski format sayı -> string döner"""
+    if isinstance(fiyat_obj, dict):
+        tl  = fiyat_obj.get("tl", 0)
+        usd = fiyat_obj.get("usd", 0)
+        return f"{fiyat_str(tl)}₺ / {fiyat_str(usd)}$"
+    return fiyat_str(fiyat_obj)
+
+def miktar_tl(fiyat_obj):
+    if isinstance(fiyat_obj, dict):
+        return float(fiyat_obj.get("tl", 0))
+    return float(fiyat_obj)
+
+def miktar_usd(fiyat_obj):
+    if isinstance(fiyat_obj, dict):
+        return float(fiyat_obj.get("usd", 0))
+    return float(fiyat_obj)
+
 def havuz_ad(hid):
     u = havuz.get(hid, {})
     return u["ad"] if isinstance(u, dict) else str(u)
@@ -108,13 +126,18 @@ def ilce_aktif_konumlar(il, ilce):
             if not k.get("silindi") and k.get("foto_id") and k.get("urun")]
 
 def ilce_urunler(il, ilce):
-    """İlçedeki aktif konumların ürünlerini topla. { urun_ad: {gram: fiyat} }"""
+    """İlçedeki aktif konumların ürünlerini topla. { urun_ad: {gram: {tl,usd} } }"""
     sonuc = {}
     for k in ilce_aktif_konumlar(il, ilce):
         u   = k.get("urun", {})
         ad  = u.get("ad", "?")
         g   = str(u.get("gram", "?"))
-        f   = u.get("fiyat", 0)
+        # Fiyat eski format (sayı) veya yeni format (dict)
+        raw_fiyat = u.get("fiyat", 0)
+        if isinstance(raw_fiyat, dict):
+            f = raw_fiyat
+        else:
+            f = {"tl": float(raw_fiyat), "usd": 0}
         if ad not in sonuc:
             sonuc[ad] = {}
         sonuc[ad][g] = f
@@ -186,7 +209,7 @@ async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not urunler:
         await q.edit_message_text(f"{ilce} bolgesinde urun bulunamadi.")
         return ConversationHandler.END
-    kb = [[InlineKeyboardButton(f"🍬 {ad}", callback_data=f"urun:{ad}")] for ad in urunler.keys()]
+    kb = [[InlineKeyboardButton(f"{ad}", callback_data=f"urun:{ad}")] for ad in urunler.keys()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
     await q.edit_message_text(f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(kb))
@@ -212,7 +235,7 @@ async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["urun_ad"] = urun_ad
     urunler = ilce_urunler(il, ilce)
     gramlar = urunler.get(urun_ad, {})
-    kb = [[InlineKeyboardButton(f"{g}  —  {fiyat_str(f)}", callback_data=f"gram:{g}:{f}")]
+    kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")]
           for g, f in gramlar.items()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
@@ -232,21 +255,32 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         il   = context.user_data["il"]
         ilce = context.user_data["ilce"]
         urunler = ilce_urunler(il, ilce)
-        kb = [[InlineKeyboardButton(f"🍬 {ad}", callback_data=f"urun:{ad}")] for ad in urunler.keys()]
+        kb = [[InlineKeyboardButton(f"{ad}", callback_data=f"urun:{ad}")] for ad in urunler.keys()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         await q.edit_message_text("Urun secin:", reply_markup=InlineKeyboardMarkup(kb))
         return URUN
-    p     = q.data.split(":")
-    gram  = p[1]
-    fiyat = float(p[2])
-    context.user_data["gram"]  = gram
-    context.user_data["fiyat"] = fiyat
+    p    = q.data.split(":")
+    gram = p[1]
+    # Fiyatı havuzdan al
+    il      = context.user_data.get("il","")
+    ilce    = context.user_data.get("ilce","")
+    urun_ad = context.user_data.get("urun_ad","")
+    urunler = ilce_urunler(il, ilce)
+    gramlar = urunler.get(urun_ad, {})
+    fiyat_obj = gramlar.get(gram, {})
+    tl_fiyat  = miktar_tl(fiyat_obj)
+    usd_fiyat = miktar_usd(fiyat_obj)
+    context.user_data["gram"]      = gram
+    context.user_data["fiyat_tl"]  = tl_fiyat
+    context.user_data["fiyat_usd"] = usd_fiyat
     il      = context.user_data["il"]
     ilce    = context.user_data["ilce"]
     urun_ad = context.user_data["urun_ad"]
     no      = sp_no(update.effective_user.id)
     context.user_data["no"] = no
+    tl_fiyat  = context.user_data.get("fiyat_tl", 0)
+    usd_fiyat = context.user_data.get("fiyat_usd", 0)
     ozet = (
         f"Siparis Ozeti\n─────────────────\n"
         f"Siparis No : {no}\n"
@@ -254,7 +288,9 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Bolge      : {ilce}\n"
         f"Urun       : {urun_ad}\n"
         f"Miktar     : {gram}\n"
-        f"Fiyat      : {fiyat_str(fiyat)}\n"
+        f"─────────────────\n"
+        f"IBAN Fiyati   : {fiyat_str(tl_fiyat)} TL\n"
+        f"TRC20 Fiyati  : {fiyat_str(usd_fiyat)} USD\n"
         f"─────────────────\n\n"
         f"Odeme yontemini secin:"
     )
@@ -291,12 +327,16 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         urun_ad = context.user_data.get("urun_ad", "?")
         gram    = context.user_data.get("gram", "?")
         fiyat   = context.user_data.get("fiyat", 0)
-        bilgi   = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
+        bilgi     = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
+        tl_fiyat  = context.user_data.get("fiyat_tl", 0)
+        usd_fiyat = context.user_data.get("fiyat_usd", 0)
+        fiyat_goster = f"{fiyat_str(tl_fiyat)} TL" if q.data == "odeme_iban" else f"{fiyat_str(usd_fiyat)} USD"
+        context.user_data["fiyat"] = tl_fiyat if q.data == "odeme_iban" else usd_fiyat
         ozet = (
             f"Siparis Ozeti\n─────────────────\n"
             f"Siparis No : {no}\n"
             f"Urun       : {urun_ad} {gram}\n"
-            f"Fiyat      : {fiyat_str(fiyat)}\n"
+            f"Fiyat      : {fiyat_goster}\n"
             f"─────────────────\n\n"
             f"{bilgi}\n\n"
             f"Odemeyi yaptiktan sonra dekont fotografini gonderin."
@@ -463,7 +503,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ad   = u["ad"]
         gramlar = u.get("miktarlar", {})
         adm[ADMIN_ID] = {"adim": "gramaj_sec", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad}
-        kb = [[InlineKeyboardButton(f"{g}  —  {fiyat_str(f)}", callback_data=f"ksg:{g}:{f}:{il}:{ilce}:{kidx}:{ad}")]
+        kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"ksg:{g}:{il}:{ilce}:{kidx}:{ad}")]
               for g, f in gramlar.items()]
         await q.edit_message_text(f"Urun: {ad}\n\nGramaji sec:", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -471,13 +511,17 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d.startswith("ksg:"):
         p    = d.split(":")
         gram = p[1]
-        f    = float(p[2])
-        il   = p[3]
-        ilce = p[4]
-        kidx = int(p[5])
-        ad   = ":".join(p[6:])
-        # Konuma ürün+gramaj+fiyat kaydet
-        konumlar[il][ilce][kidx]["urun"] = {"ad": ad, "gram": gram, "fiyat": f}
+        il   = p[2]
+        ilce = p[3]
+        kidx = int(p[4])
+        ad   = ":".join(p[5:])
+        # Havuzdan fiyatı al
+        fiyat_obj = {}
+        for hid, hu in havuz.items():
+            if isinstance(hu, dict) and hu.get("ad") == ad:
+                fiyat_obj = hu.get("miktarlar", {}).get(gram, {})
+                break
+        konumlar[il][ilce][kidx]["urun"] = {"ad": ad, "gram": gram, "fiyat": fiyat_obj}
         kaydet(K_DOSYA, konumlar)
         del adm[ADMIN_ID]
         kalan = ilce_konum_sayisi(il, ilce)
@@ -584,9 +628,9 @@ async def goster_havuz(q):
         tip       = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         miktarlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
         mik_txt   = "  ".join([f"{m}:{fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "Miktar yok"
-        msg += f"\n🍬 {ad} [{tip_label(tip)}]\n  {mik_txt}\n"
+        msg += f"\n{ad} [{tip_label(tip)}]\n  {mik_txt}\n"
     msg += "\nDuzenlemek icin secin:"
-    kb = [[InlineKeyboardButton(f"🍬 {u['ad'] if isinstance(u,dict) else u}", callback_data=f"u_detay:{hid}")]
+    kb = [[InlineKeyboardButton(f"{u['ad'] if isinstance(u,dict) else u}", callback_data=f"u_detay:{hid}")]
           for hid, u in havuz.items()]
     kb.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="u_ekle")])
     if hasattr(q, 'edit_message_text'):
@@ -643,7 +687,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Geri",              callback_data="u_geri")],
         ]
         await q.edit_message_text(
-            f"🍬 {ad}  [{tip_label(tip)}]\n\nMiktar / Fiyat:\n{mik_txt}\n\nNe yapmak istiyorsun?",
+            f"{ad}  [{tip_label(tip)}]\n\nMiktar / Fiyat:\n{mik_txt}\n\nNe yapmak istiyorsun?",
             reply_markup=InlineKeyboardMarkup(kb)
         )
 
@@ -767,37 +811,49 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif a["adim"] == "u_miktar":
             adm[uid]["gecici_miktar"] = txt
-            adm[uid]["adim"]          = "u_fiyat"
-            await update.message.reply_text(f"'{txt}' icin fiyati yaz (örn: 150):")
+            adm[uid]["adim"]          = "u_fiyat_tl"
+            await update.message.reply_text(f"'{txt}' icin TL fiyatini yaz (örn: 450):")
             return
 
-        elif a["adim"] == "u_fiyat":
+        elif a["adim"] == "u_fiyat_tl":
             try:
-                f = float(txt.replace(",", "."))
-                m = a.get("gecici_miktar", "?")
+                tl = float(txt.replace(",", "."))
+                adm[uid]["gecici_tl"] = tl
+                adm[uid]["adim"]      = "u_fiyat_usd"
+                await update.message.reply_text(f"'{a['gecici_miktar']}' icin Dolar (USD) fiyatini yaz (örn: 14):")
+            except ValueError:
+                await update.message.reply_text("Gecersiz fiyat! Sayi gir (örn: 450)")
+            return
+
+        elif a["adim"] == "u_fiyat_usd":
+            try:
+                usd = float(txt.replace(",", "."))
+                tl  = a.get("gecici_tl", 0)
+                m   = a.get("gecici_miktar", "?")
+                fiyat_obj = {"tl": tl, "usd": usd}
                 if a.get("yeni"):
                     if "miktarlar" not in a:
                         a["miktarlar"] = {}
-                    a["miktarlar"][m] = f
+                    a["miktarlar"][m] = fiyat_obj
                     a["adim"] = "u_devam"
-                    mik_txt = "  ".join([f"{mk}:{fiyat_str(fv)}" for mk, fv in a["miktarlar"].items()])
+                    mik_txt = "  ".join([f"{mk}: {miktar_fiyat_str(fv)}" for mk, fv in a["miktarlar"].items()])
                     kb = [
                         [InlineKeyboardButton("➕ Baska Miktar Ekle", callback_data="u_gramaj_devam")],
                         [InlineKeyboardButton("✅ Kaydet",             callback_data="u_gramaj_kaydet")],
                     ]
                     await update.message.reply_text(
-                        f"Eklendi! Mevcut: {mik_txt}",
+                        f"Eklendi!\n\nMevcut:\n{mik_txt}",
                         reply_markup=InlineKeyboardMarkup(kb)
                     )
                 else:
                     hid = a["hid"]
                     if isinstance(havuz.get(hid), dict):
-                        havuz[hid]["miktarlar"][m] = f
+                        havuz[hid]["miktarlar"][m] = fiyat_obj
                         kaydet(H_DOSYA, havuz)
                     del adm[uid]
-                    await update.message.reply_text(f"'{m}: {fiyat_str(f)}' eklendi!")
+                    await update.message.reply_text(f"'{m}: {miktar_fiyat_str(fiyat_obj)}' eklendi!")
             except ValueError:
-                await update.message.reply_text("Gecersiz fiyat! Sayi gir (örn: 150)")
+                await update.message.reply_text("Gecersiz fiyat! Sayi gir (örn: 14)")
             return
 
         elif a["adim"] == "iban_guncelle":
