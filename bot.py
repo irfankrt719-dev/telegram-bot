@@ -486,17 +486,9 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 gram    = s.get("gram", gram)
                 fiyat_v = s.get("fiyat", fiyat_v)
                 break
-    if not no:
-        await update.message.reply_text("Aktif siparisıniz yok. /start ile baslayin.")
+    if not no or no not in siparisler:
+        await update.message.reply_text("Aktif siparisıniz yok. Oncelikle /start ile siparis olusturun.")
         return
-    if no not in siparisler:
-        siparisler[no] = {
-            "user_id":    uid,
-            "musteri_ad": update.effective_user.first_name or "",
-            "il": il, "ilce": ilce,
-            "urun": f"{urun_ad} {gram}", "urun_ad": urun_ad,
-            "gram": gram, "fiyat": fiyat_v, "durum": "beklemede"
-        }
     kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}")]]
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
