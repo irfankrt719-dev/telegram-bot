@@ -576,20 +576,28 @@ async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"{il} / {ilce}\n\nFotografi gonder:")
 
 # ─── ADMİN: /urunler ─────────────────────────────────────────────────────────
-async def urunler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
+
+async def goster_havuz(q):
     msg = "Urun Havuzu\n─────────────────\n"
     for hid, u in havuz.items():
-        ad      = u["ad"] if isinstance(u, dict) else u
-        gramlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
-        gram_txt = "  ".join([f"{g}:{fiyat_str(f)}" for g, f in gramlar.items()]) if gramlar else "Gramaj yok"
-        msg += f"\n🍬 {ad}\n  {gram_txt}\n"
-    msg += "\nDuzenlemek icin asagidan sec:"
+        ad        = u["ad"] if isinstance(u, dict) else u
+        tip       = u.get("tip", "gram") if isinstance(u, dict) else "gram"
+        miktarlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
+        mik_txt   = "  ".join([f"{m}:{fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "Miktar yok"
+        msg += f"\n🍬 {ad} [{tip_label(tip)}]\n  {mik_txt}\n"
+    msg += "\nDuzenlemek icin secin:"
     kb = [[InlineKeyboardButton(f"🍬 {u['ad'] if isinstance(u,dict) else u}", callback_data=f"u_detay:{hid}")]
           for hid, u in havuz.items()]
     kb.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="u_ekle")])
-    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb))
+    if hasattr(q, 'edit_message_text'):
+        await q.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb))
+    else:
+        await q.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb))
+
+async def urunler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await goster_havuz(update.message)
 
 async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -599,20 +607,38 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     d = q.data
 
+    # ── Yeni ürün ekle ──
     if d == "u_ekle":
         adm[ADMIN_ID] = {"adim": "u_ad"}
         await q.edit_message_text("Yeni urun adini yaz (örn: Skunk, Crystall):")
 
+    # ── Tip seç ──
+    elif d.startswith("u_tip_"):
+        tip = d.replace("u_tip_", "")
+        adm[ADMIN_ID]["tip"]  = tip
+        adm[ADMIN_ID]["adim"] = "u_miktar"
+        ad = adm[ADMIN_ID].get("urun_ad", "?")
+        if tip == "gram":
+            ipucu = "örn: 1g, 3.5g, 7g"
+        elif tip == "tekli":
+            ipucu = "örn: 1 Adet, 5 Adet"
+        else:
+            ipucu = "örn: 1 Kutu, 5 Kutu"
+        await q.edit_message_text(
+            f"Urun: {ad}  [{tip_label(tip)}]\n\nMiktar yaz ({ipucu}):"
+        )
+
+    # ── Ürün detay ──
     elif d.startswith("u_detay:"):
-        hid     = d.split(":")[1]
-        u       = havuz.get(hid, {})
-        ad      = u["ad"] if isinstance(u, dict) else u
-        tip     = u.get("tip", "gram") if isinstance(u, dict) else "gram"
+        hid       = d.split(":")[1]
+        u         = havuz.get(hid, {})
+        ad        = u["ad"] if isinstance(u, dict) else u
+        tip       = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         miktarlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
-        mik_txt = "\n".join([f"  {m}: {fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "  Miktar yok"
+        mik_txt   = "\n".join([f"  {m}: {fiyat_str(f)}" for m, f in miktarlar.items()]) if miktarlar else "  Miktar yok"
         kb = [
-            [InlineKeyboardButton("➕ Miktar/Fiyat Ekle", callback_data=f"u_gram_ekle:{hid}")],
-            [InlineKeyboardButton("➖ Miktar Sil",        callback_data=f"u_gram_sil:{hid}")],
+            [InlineKeyboardButton("➕ Miktar/Fiyat Ekle", callback_data=f"u_mik_ekle:{hid}")],
+            [InlineKeyboardButton("➖ Miktar Sil",        callback_data=f"u_mik_sil:{hid}")],
             [InlineKeyboardButton("🗑 Urunu Sil",         callback_data=f"u_sil:{hid}")],
             [InlineKeyboardButton("⬅️ Geri",              callback_data="u_geri")],
         ]
@@ -621,64 +647,55 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(kb)
         )
 
+    # ── Geri ──
     elif d == "u_geri":
-        msg = "Urun Havuzu\n─────────────────\n"
-        for hid2, u2 in havuz.items():
-            ad2 = u2["ad"] if isinstance(u2, dict) else u2
-            gramlar2 = u2.get("miktarlar", {}) if isinstance(u2, dict) else {}
-            gram_txt2 = "  ".join([f"{g}:{fiyat_str(f)}" for g, f in gramlar2.items()]) if gramlar2 else "Gramaj yok"
-            msg += f"\n🍬 {ad2}\n  {gram_txt2}\n"
-        kb = [[InlineKeyboardButton(f"🍬 {u['ad'] if isinstance(u,dict) else u}", callback_data=f"u_detay:{hid2}")]
-              for hid2, u in havuz.items()]
-        kb.append([InlineKeyboardButton("➕ Yeni Urun Ekle", callback_data="u_ekle")])
-        await q.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb))
+        await goster_havuz(q)
 
-    elif d.startswith("u_gram_ekle:"):
+    # ── Mevcut ürüne miktar ekle ──
+    elif d.startswith("u_mik_ekle:"):
         hid = d.split(":")[1]
-        adm[ADMIN_ID] = {"adim": "u_gram", "hid": hid}
-        await q.edit_message_text("Gramaji yaz (örn: 3.5g):")
-
-    elif d.startswith("u_gram_sil:"):
-        hid     = d.split(":")[1]
-        u       = havuz.get(hid, {})
-        gramlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
-        if not gramlar:
-            await q.answer("Silinecek gramaj yok!", show_alert=True)
-            return
-        kb = [[InlineKeyboardButton(f"🗑 {g} — {fiyat_str(f)}", callback_data=f"u_gram_sil2:{hid}:{g}")]
-              for g, f in gramlar.items()]
-        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data=f"u_detay:{hid}")])
-        await q.edit_message_text("Hangi gramaji silmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
-
-    elif d.startswith("u_gram_sil2:"):
-        p    = d.split(":")
-        hid  = p[1]
-        gram = p[2]
-        u    = havuz.get(hid, {})
-        if isinstance(u, dict) and gram in u.get("miktarlar", {}):
-            del u["miktarlar"][gram]
-            kaydet(H_DOSYA, havuz)
-        await q.edit_message_text(f"'{gram}' silindi!")
-
-
-    elif d.startswith("u_tip_"):
-        tip = d.replace("u_tip_", "")
-        adm[ADMIN_ID]["tip"]  = tip
-        adm[ADMIN_ID]["adim"] = "u_miktar"
-        urun_adi = adm[ADMIN_ID].get("urun_ad", "?")
+        u   = havuz.get(hid, {})
+        tip = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         if tip == "gram":
-            await q.edit_message_text(f"Urun: {urun_adi} [Gram]\n\nIlk gramaji yaz (örn: 1g):")
+            ipucu = "örn: 7g, 14g"
         elif tip == "tekli":
-            await q.edit_message_text(f"Urun: {urun_adi} [Tekli]\n\nIlk adedi yaz (örn: 1 Adet):")
+            ipucu = "örn: 10 Adet"
         else:
-            await q.edit_message_text(f"Urun: {urun_adi} [Kutu]\n\nIlk kutu miktarini yaz (örn: 1 Kutu):")
+            ipucu = "örn: 3 Kutu"
+        adm[ADMIN_ID] = {"adim": "u_miktar", "hid": hid, "yeni": False}
+        await q.edit_message_text(f"Eklenecek miktari yaz ({ipucu}):")
 
+    # ── Miktar sil ──
+    elif d.startswith("u_mik_sil:"):
+        hid       = d.split(":")[1]
+        u         = havuz.get(hid, {})
+        miktarlar = u.get("miktarlar", {}) if isinstance(u, dict) else {}
+        if not miktarlar:
+            await q.answer("Silinecek miktar yok!", show_alert=True)
+            return
+        kb = [[InlineKeyboardButton(f"🗑 {m} — {fiyat_str(f)}", callback_data=f"u_mik_sil2:{hid}:{m}")]
+              for m, f in miktarlar.items()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data=f"u_detay:{hid}")])
+        await q.edit_message_text("Hangi miktari silmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("u_mik_sil2:"):
+        p   = d.split(":")
+        hid = p[1]
+        mik = p[2]
+        u   = havuz.get(hid, {})
+        if isinstance(u, dict) and mik in u.get("miktarlar", {}):
+            del u["miktarlar"][mik]
+            kaydet(H_DOSYA, havuz)
+        await q.edit_message_text(f"'{mik}' silindi!")
+
+    # ── Ürün sil ──
     elif d.startswith("u_sil:"):
         hid = d.split(":")[1]
         u   = havuz.pop(hid, {})
         ad  = u["ad"] if isinstance(u, dict) else u
         kaydet(H_DOSYA, havuz)
         await q.edit_message_text(f"'{ad}' urun havuzundan silindi!")
+
 
 # ─── ADMİN METİN ─────────────────────────────────────────────────────────────
 async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -711,14 +728,19 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif a["adim"] == "u_ad":
-            adm[uid] = {"adim": "u_gram", "urun_ad": txt, "hid": f"h{int(time.time())}", "miktarlar": {}, "yeni": True}
-            await update.message.reply_text(f"Urun: {txt}\n\nIlk gramaji yaz (örn: 1g):")
+            adm[uid] = {"adim": "u_tip_bekleniyor", "urun_ad": txt, "hid": f"h{int(time.time())}", "miktarlar": {}, "yeni": True}
+            kb = [
+                [InlineKeyboardButton("⚖️ Gram",         callback_data="u_tip_gram")],
+                [InlineKeyboardButton("1️⃣ Tekli (Adet)", callback_data="u_tip_tekli")],
+                [InlineKeyboardButton("📦 Kutu",          callback_data="u_tip_kutu")],
+            ]
+            await update.message.reply_text(f"Urun: {txt}\n\nSatis tipini sec:", reply_markup=InlineKeyboardMarkup(kb))
             return
 
         elif a["adim"] == "u_miktar":
             adm[uid]["gecici_miktar"] = txt
             adm[uid]["adim"]          = "u_fiyat"
-            await update.message.reply_text(f"{txt} icin fiyati yaz (örn: 150):")
+            await update.message.reply_text(f"'{txt}' icin fiyati yaz (örn: 150):")
             return
 
         elif a["adim"] == "u_fiyat":
@@ -777,11 +799,12 @@ async def urun_gramaj_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tip = adm[ADMIN_ID].get("tip", "gram")
         adm[ADMIN_ID]["adim"] = "u_miktar"
         if tip == "gram":
-            await q.edit_message_text("Yeni gramaji yaz (örn: 7g):")
+            ipucu = "örn: 7g, 14g"
         elif tip == "tekli":
-            await q.edit_message_text("Yeni adedi yaz (örn: 10 Adet):")
+            ipucu = "örn: 10 Adet"
         else:
-            await q.edit_message_text("Yeni kutu miktarini yaz (örn: 3 Kutu):")
+            ipucu = "örn: 3 Kutu"
+        await q.edit_message_text(f"Yeni miktari yaz ({ipucu}):")
 
     elif q.data == "u_gramaj_kaydet":
         islem   = adm.get(ADMIN_ID, {})
@@ -980,7 +1003,6 @@ def main():
     app.add_handler(CallbackQueryHandler(adm_cb,         pattern=r"^(ks:|ksg:|yeni_k:|tamam|onay:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,          pattern=r"^ke_"))
     app.add_handler(CallbackQueryHandler(urun_cb,        pattern=r"^u_"))
-    app.add_handler(CallbackQueryHandler(urun_cb,        pattern=r"^u_tip_"))
     app.add_handler(CallbackQueryHandler(urun_gramaj_cb, pattern=r"^u_gramaj_"))
     app.add_handler(CallbackQueryHandler(odeme_cb,       pattern=r"^ody_"))
     app.add_handler(CallbackQueryHandler(gunsonu_cb,     pattern=r"^gunsonu_"))
