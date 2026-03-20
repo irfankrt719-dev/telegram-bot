@@ -185,7 +185,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
     else:
         await update.message.reply_text(giris_metni(user), reply_markup=giris_kb())
-    return IL
 
 async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -208,8 +207,11 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
-        await edit("Il secin:", InlineKeyboardMarkup(kb))
-        context.user_data["conv_active"] = True
+        try:
+            await q.message.delete()
+        except:
+            pass
+        await q.message.chat.send_message("Il secin:", reply_markup=InlineKeyboardMarkup(kb))
 
     elif q.data == "giris_kurallar":
         kural = ayarlar.get("market_kurali", "Henuz yazilmamis.")
@@ -238,54 +240,45 @@ async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data == "iptal":
         await edit("Iptal edildi.", None)
-        return ConversationHandler.END
     if q.data == "giris_geri":
         await edit(giris_metni(q.from_user), giris_kb())
-        return IL
     il = q.data.split(":", 1)[1]
     context.user_data["il"] = il
     aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
     if not aktif_ilceler:
         await edit(f"{il} ilinde aktif bolge yok.", None)
-        return ConversationHandler.END
     kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
     await edit(f"Il: {il}\n\nBolge secin:", InlineKeyboardMarkup(kb))
-    return ILCE
 
 async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
-        return ConversationHandler.END
     if q.data == "geri_il":
         aktif = [il for il, ilceler in konumlar.items() if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
         kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         await q.edit_message_text("Il secin:", reply_markup=InlineKeyboardMarkup(kb))
-        return IL
     ilce = q.data.split(":", 1)[1]
     il   = context.user_data["il"]
     context.user_data["ilce"] = ilce
     urunler = ilce_urunler(il, ilce)
     if not urunler:
         await q.edit_message_text(f"{ilce} bolgesinde urun bulunamadi.")
-        return ConversationHandler.END
     kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
     await q.edit_message_text(f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(kb))
-    return URUN
 
 async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
-        return ConversationHandler.END
     if q.data == "geri_il":
         il = context.user_data["il"]
         aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
@@ -293,7 +286,6 @@ async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         await q.edit_message_text("Bolge secin:", reply_markup=InlineKeyboardMarkup(kb))
-        return ILCE
     urun_ad = q.data.split(":", 1)[1]
     il      = context.user_data["il"]
     ilce    = context.user_data["ilce"]
@@ -304,14 +296,12 @@ async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
     await q.edit_message_text(f"Il: {il}  |  Bolge: {ilce}\nUrun: {urun_ad}\n\nMiktar secin:", reply_markup=InlineKeyboardMarkup(kb))
-    return GRAM
 
 async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
-        return ConversationHandler.END
     if q.data == "geri_ilce":
         il   = context.user_data["il"]
         ilce = context.user_data["ilce"]
@@ -320,7 +310,6 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         await q.edit_message_text("Urun secin:", reply_markup=InlineKeyboardMarkup(kb))
-        return URUN
     gram  = q.data.split(":", 1)[1]
     il    = context.user_data["il"]
     ilce  = context.user_data["ilce"]
@@ -364,14 +353,12 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Iptal",           callback_data="iptal")],
     ]
     await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
-    return ODEME_SEC
 
 async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
-        return ConversationHandler.END
     if q.data == "geri_ilce":
         il   = context.user_data["il"]
         ilce = context.user_data["ilce"]
@@ -382,7 +369,6 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         await q.edit_message_text("Miktar secin:", reply_markup=InlineKeyboardMarkup(kb))
-        return GRAM
     if q.data in ("odeme_iban", "odeme_trc20"):
         context.user_data["odeme_yontemi"] = q.data
         no      = context.user_data.get("no", "?")
@@ -408,14 +394,12 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ Iptal",            callback_data="iptal")],
         ]
         await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
-        return ODEME
 
 async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
-        return ConversationHandler.END
     if q.data == "geri_odeme":
         il      = context.user_data["il"]
         ilce    = context.user_data["ilce"]
@@ -447,7 +431,6 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ Iptal",           callback_data="iptal")],
         ]
         await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
-        return ODEME_SEC
     if q.data == "onayla":
         no = context.user_data.get("no", "?")
         siparisler[no] = {
@@ -467,7 +450,6 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             f"Siparisıniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\nDekontu gonderin."
         )
-        return ConversationHandler.END
 
 # ─── DEKONT ──────────────────────────────────────────────────────────────────
 async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1069,28 +1051,13 @@ async def gunsonu_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def iptal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("Iptal edildi. /start ile baslayin.")
-    return ConversationHandler.END
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("start", start),
-            CallbackQueryHandler(giris_cb, pattern=r"^giris_"),
-        ],
-        states={
-            IL:        [CallbackQueryHandler(giris_cb,  pattern=r"^giris_"),
-                        CallbackQueryHandler(il_sec)],
-            ILCE:      [CallbackQueryHandler(ilce_sec)],
-            URUN:      [CallbackQueryHandler(urun_sec)],
-            GRAM:      [CallbackQueryHandler(gram_sec)],
-            ODEME_SEC: [CallbackQueryHandler(odeme_sec)],
-            ODEME:     [CallbackQueryHandler(odeme)],
-        },
-        fallbacks=[CommandHandler("iptal", iptal)],
-    )
-    app.add_handler(conv)
+
+    # Komutlar
+    app.add_handler(CommandHandler("start",       start))
     app.add_handler(CommandHandler("siparisler",  siparisler_goster))
     app.add_handler(CommandHandler("konumlar",    konumlar_goster))
     app.add_handler(CommandHandler("konum_ekle",  konum_ekle))
@@ -1099,28 +1066,30 @@ def main():
     app.add_handler(CommandHandler("gunsonu",     gunsonu))
     app.add_handler(CommandHandler("musteriler",  musteriler_goster))
     app.add_handler(CommandHandler("ayarlar",     ayarlar_menu))
+    app.add_handler(CommandHandler("iptal",       iptal))
 
-    # Giriş ve alışveriş butonları - ConversationHandler dışında global
-    app.add_handler(CallbackQueryHandler(giris_cb, pattern=r"^giris_"))
-    app.add_handler(CallbackQueryHandler(il_sec,   pattern=r"^il:"))
-    app.add_handler(CallbackQueryHandler(ilce_sec, pattern=r"^ilce:"))
-    app.add_handler(CallbackQueryHandler(urun_sec, pattern=r"^urun:"))
-    app.add_handler(CallbackQueryHandler(gram_sec, pattern=r"^gram:"))
-    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme)"))
-    app.add_handler(CallbackQueryHandler(odeme,    pattern=r"^(onayla|geri_odeme|iptal)"))
+    # Callback handlers - sıra önemli, önce özel pattern'ler
+    app.add_handler(CallbackQueryHandler(giris_cb,  pattern=r"^giris_"))
+    app.add_handler(CallbackQueryHandler(il_sec,    pattern=r"^il:"))
+    app.add_handler(CallbackQueryHandler(ilce_sec,  pattern=r"^(ilce:|geri_il$)"))
+    app.add_handler(CallbackQueryHandler(urun_sec,  pattern=r"^(urun:|geri_il$)"))
+    app.add_handler(CallbackQueryHandler(gram_sec,  pattern=r"^(gram:|geri_ilce$)"))
+    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce$)"))
+    app.add_handler(CallbackQueryHandler(odeme,     pattern=r"^(onayla|geri_odeme$|iptal$)"))
 
-    app.add_handler(CallbackQueryHandler(adm_cb,      pattern=r"^(ks:|ksg:|yeni_k:|tamam|onay:)"))
-    app.add_handler(CallbackQueryHandler(ke_cb,        pattern=r"^(ke_|yeni_k:)"))
-    app.add_handler(CallbackQueryHandler(urun_cb,      pattern=r"^u_"))
-    app.add_handler(CallbackQueryHandler(odeme_cb,     pattern=r"^ody_"))
-    app.add_handler(CallbackQueryHandler(ayarlar_cb,   pattern=r"^ay_"))
-    app.add_handler(CallbackQueryHandler(gunsonu_cb,   pattern=r"^gunsonu_"))
+    app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:)"))
+    app.add_handler(CallbackQueryHandler(ke_cb,      pattern=r"^ke_"))
+    app.add_handler(CallbackQueryHandler(urun_cb,    pattern=r"^u_"))
+    app.add_handler(CallbackQueryHandler(odeme_cb,   pattern=r"^ody_"))
+    app.add_handler(CallbackQueryHandler(ayarlar_cb, pattern=r"^ay_"))
+    app.add_handler(CallbackQueryHandler(gunsonu_cb, pattern=r"^gunsonu_"))
 
+    # Mesaj handlers
     app.add_handler(MessageHandler(filters.PHOTO,    foto_al))
     app.add_handler(MessageHandler(filters.LOCATION, konum_al))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, metin))
 
-    logger.info(f"Bot basladi.")
+    logger.info("Bot basladi.")
     app.run_polling()
 
 if __name__ == "__main__":
