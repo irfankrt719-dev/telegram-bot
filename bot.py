@@ -13,8 +13,16 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters, ConversationHandler
 )
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "BURAYA_TOKEN")
-ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
+BOT_TOKEN     = os.environ.get("BOT_TOKEN", "BURAYA_TOKEN")
+ADMIN_ID      = int(os.environ.get("ADMIN_ID", "123456789"))
+A_DOSYA = "ayarlar.json"
+
+AYARLAR_VARSAYILAN = {
+    "giris_foto_id": "",
+    "kanal_link":    "https://t.me/kanaliniz",
+    "destek_link":   "https://t.me/destekkullanici",
+    "market_kurali": "Market kurallari buraya yazilacak."
+}
 
 BANKA = (
     "Odeme Bilgileri\n"
@@ -61,6 +69,10 @@ def yukle(d, v):
 def kaydet(d, data):
     with open(d, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+ayarlar         = yukle(A_DOSYA, AYARLAR_VARSAYILAN)
+if not os.path.exists(A_DOSYA):
+    kaydet(A_DOSYA, ayarlar)
 
 siparisler      = yukle(S_DOSYA, {})
 konumlar        = yukle(K_DOSYA, {})
@@ -192,17 +204,98 @@ def musteri_guncelle(user_id, ad=""):
 # ─── MÜŞTERİ AKIŞI ───────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    aktif = [il for il, ilceler in konumlar.items()
-             if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
-    if not aktif:
-        await update.message.reply_text("Su an hizmet verilen bolge yok.\nLutfen daha sonra tekrar deneyin.")
-        return ConversationHandler.END
-    kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
-    kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-    await update.message.reply_text(
-        f"Merhaba {update.effective_user.first_name}!\n\nIl secin:",
-        reply_markup=InlineKeyboardMarkup(kb)
+    user   = update.effective_user
+    uid    = user.id
+    ad     = user.first_name or ""
+
+    # Müşteri bilgileri
+    t     = musteri_tamamlanan(uid)
+    kalan = musteri_kalan_siparis(uid)
+    indirim_aktif = musteri_indirim_var_mi(uid)
+
+    if indirim_aktif:
+        indirim_txt = f"🎉 Bu sipariste %{INDIRIM_ORANI} indirim hakkın var!"
+    elif kalan > 0:
+        indirim_txt = f"🎁 {kalan} siparis sonra %{INDIRIM_ORANI} indirim kazanacaksin!"
+    else:
+        indirim_txt = f"🎁 {INDIRIM_HER_N_SIPARIS} siparis yap, %{INDIRIM_ORANI} indirim kazan!"
+
+    giris_metni = (
+        f"👋 Merhaba, {ad}!\n\n"
+        f"🛒 Toplam Siparisiniz: {t}\n"
+        f"{indirim_txt}\n\n"
+        f"Asagidan devam edin:"
     )
+
+    kb = [
+        [InlineKeyboardButton("🛒 Alisverise Basla",  callback_data="giris_alisveris")],
+        [InlineKeyboardButton("📋 Market Kurallari",   callback_data="giris_kurallar")],
+        [InlineKeyboardButton("📢 Kanalimiz",          url=ayarlar.get("kanal_link", "https://t.me/kanaliniz"))],
+        [InlineKeyboardButton("🆘 Destek",             url=ayarlar.get("destek_link", "https://t.me/destekkullanici"))],
+    ]
+    markup = InlineKeyboardMarkup(kb)
+
+    if ayarlar.get("giris_foto_id", ""):
+        await update.message.reply_photo(
+            photo=ayarlar.get("giris_foto_id", ""),
+            caption=giris_metni,
+            reply_markup=markup
+        )
+    else:
+        await update.message.reply_text(giris_metni, reply_markup=markup)
+
+    return IL
+
+async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if q.data == "giris_kurallar":
+        kb = [[InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")]]
+        await q.edit_message_caption(
+            caption=f"📋 Market Kurallari\n\n{ayarlar.get("market_kurali", "")}",
+            reply_markup=InlineKeyboardMarkup(kb)
+        ) if q.message.photo else await q.edit_message_text(
+            f"📋 Market Kurallari\n\n{ayarlar.get("market_kurali", "")}",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+    elif q.data == "giris_geri":
+        user  = q.from_user
+        uid   = user.id
+        t     = musteri_tamamlanan(uid)
+        kalan = musteri_kalan_siparis(uid)
+        indirim_aktif = musteri_indirim_var_mi(uid)
+        if indirim_aktif:
+            indirim_txt = f"🎉 Bu sipariste %{INDIRIM_ORANI} indirim hakkın var!"
+        elif kalan > 0:
+            indirim_txt = f"🎁 {kalan} siparis sonra %{INDIRIM_ORANI} indirim kazanacaksin!"
+        else:
+            indirim_txt = f"🎁 {INDIRIM_HER_N_SIPARIS} siparis yap, %{INDIRIM_ORANI} indirim kazan!"
+        giris_metni = (
+            f"👋 Merhaba, {user.first_name}!\n\n"
+            f"🛒 Toplam Siparisiniz: {t}\n"
+            f"{indirim_txt}\n\nAsagidan devam edin:"
+        )
+        kb = [
+            [InlineKeyboardButton("🛒 Alisverise Basla", callback_data="giris_alisveris")],
+            [InlineKeyboardButton("📋 Market Kurallari",  callback_data="giris_kurallar")],
+            [InlineKeyboardButton("📢 Kanalimiz",         url=ayarlar.get("kanal_link", "https://t.me/kanaliniz"))],
+        ]
+        if q.message.photo:
+            await q.edit_message_caption(caption=giris_metni, reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await q.edit_message_text(giris_metni, reply_markup=InlineKeyboardMarkup(kb))
+    elif q.data == "giris_alisveris":
+        aktif = [il for il, ilceler in konumlar.items()
+                 if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
+        if not aktif:
+            await q.answer("Su an hizmet verilen bolge yok!", show_alert=True)
+            return IL
+        kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
+        if q.message.photo:
+            await q.edit_message_caption(caption="Il secin:", reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await q.edit_message_text("Il secin:", reply_markup=InlineKeyboardMarkup(kb))
     return IL
 
 async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -211,6 +304,8 @@ async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
         return ConversationHandler.END
+    if q.data == "giris_geri":
+        return await giris_cb(update, context)
     il = q.data.split(":", 1)[1]
     context.user_data["il"] = il
     aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
@@ -463,6 +558,16 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid == ADMIN_ID:
+        # Giriş fotoğrafı ayarlama modu
+        if uid in adm and adm[uid].get("adim") == "giris_foto":
+            ayarlar["giris_foto_id"] = update.message.photo[-1].file_id
+            kaydet(A_DOSYA, ayarlar)
+            del adm[uid]
+            await update.message.reply_text(
+                f"Giris gorseli ayarlandi!\n\n"
+                f"Simdi /start yazarak test edebilirsin."
+            )
+            return
         if uid in adm and adm[uid].get("adim") == "foto":
             adm[uid]["foto_id"] = update.message.photo[-1].file_id
             adm[uid]["adim"]    = "konum"
@@ -940,6 +1045,13 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Gecersiz fiyat! Sayi gir (örn: 14)")
             return
 
+        elif a["adim"] == "kurallar_yaz":
+            pass  # ayarlar dict ile yonetiliyor
+            ayarlar["market_kurali"] = txt
+            del adm[uid]
+            await update.message.reply_text("Market kurallari guncellendi!")
+            return
+
         elif a["adim"] == "iban_guncelle":
             odeme_bilgileri["iban"] = "Odeme Yontemi: IBAN / Havale\n─────────────────\n" + txt
             kaydet(O_DOSYA, odeme_bilgileri)
@@ -988,6 +1100,88 @@ async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("Yeni TRC20 adresini yaz:")
 
 
+
+# ─── ADMİN: /giris_foto ──────────────────────────────────────────────────────
+async def giris_foto_ayarla(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    adm[ADMIN_ID] = {"adim": "giris_foto"}
+    await update.message.reply_text(
+        "Giris ekrani icin gorsel gonder:\n\n"
+        "Fotografi gonderdikten sonra otomatik ayarlanacak."
+    )
+
+async def giris_foto_kaydet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    uid = update.effective_user.id
+    if uid == ADMIN_ID and uid in adm and adm[uid].get("adim") == "giris_foto":
+        ayarlar["giris_foto_id"] = update.message.photo[-1].file_id
+        del adm[uid]
+        await update.message.reply_text(
+            "Giris gorseli ayarlandi!\n\nSimdi /start yazarak test edebilirsin."
+        )
+        return True
+    return False
+
+
+# ─── ADMİN: /ayarlar ─────────────────────────────────────────────────────────
+async def ayarlar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await goster_ayarlar_menu(update.message)
+
+async def goster_ayarlar_menu(msg):
+    kb = [
+        [InlineKeyboardButton("🖼 Giris Gorseli Degistir",  callback_data="ay_foto")],
+        [InlineKeyboardButton("📢 Kanal Linkini Degistir",   callback_data="ay_kanal")],
+        [InlineKeyboardButton("🆘 Destek Linkini Degistir",  callback_data="ay_destek")],
+        [InlineKeyboardButton("📋 Market Kurallarini Yaz",   callback_data="ay_kurallar")],
+    ]
+    txt = (
+        f"Bot Ayarlari\n─────────────────\n\n"
+        f"Giris Gorseli : {'Ayarli' if ayarlar.get('giris_foto_id') else 'Ayarlanmamis'}\n"
+        f"Kanal Link    : {ayarlar.get('kanal_link', '-')}\n"
+        f"Destek Link   : {ayarlar.get('destek_link', '-')}\n"
+        f"Market Kurali : {'Ayarli' if ayarlar.get('market_kurali') else 'Bos'}\n"
+    )
+    if hasattr(msg, 'reply_text'):
+        await msg.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb))
+    else:
+        await msg.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
+
+async def ayarlar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer("Yetkisiz!", show_alert=True)
+        return
+    await q.answer()
+    d = q.data
+
+    if d == "ay_foto":
+        adm[ADMIN_ID] = {"adim": "giris_foto"}
+        await q.edit_message_text(
+            "Yeni giris gorselini gonder:\n\n"
+            "Fotografi buraya at, otomatik ayarlanacak."
+        )
+    elif d == "ay_kanal":
+        adm[ADMIN_ID] = {"adim": "ay_kanal"}
+        await q.edit_message_text(
+            f"Mevcut kanal linki:\n{ayarlar.get('kanal_link', '-')}\n\n"
+            "Yeni kanal linkini yaz (örn: https://t.me/kanaliniz):"
+        )
+    elif d == "ay_destek":
+        adm[ADMIN_ID] = {"adim": "ay_destek"}
+        await q.edit_message_text(
+            f"Mevcut destek linki:\n{ayarlar.get('destek_link', '-')}\n\n"
+            "Yeni destek linkini yaz (örn: https://t.me/destekkullanici):"
+        )
+    elif d == "ay_kurallar":
+        adm[ADMIN_ID] = {"adim": "ay_kurallar"}
+        await q.edit_message_text(
+            "Yeni market kurallarini yaz:\n\n"
+            "Istedigin kadar uzun yazabilirsin."
+        )
+
 # ─── ADMİN: /musteriler ──────────────────────────────────────────────────────
 async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1004,6 +1198,18 @@ async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
         indirim = "INDIRIM HAKKL VAR!" if t > 0 and t % INDIRIM_HER_N_SIPARIS == 0 else f"{kalan} siparis kaldi"
         msg += f"\n👤 {ad} (ID:{uid})\n  Tamamlanan: {t} siparis\n  Durum: {indirim}\n"
     await update.message.reply_text(msg)
+
+
+# ─── ADMİN: /kurallar_ayarla ─────────────────────────────────────────────────
+async def kurallar_ayarla(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pass  # ayarlar dict ile yonetiliyor
+    if update.effective_user.id != ADMIN_ID:
+        return
+    adm[ADMIN_ID] = {"adim": "kurallar_yaz"}
+    await update.message.reply_text(
+        "Yeni market kurallarini yaz:\n\n"
+        "Istedigin kadar uzun yazabilirsin."
+    )
 
 # ─── GÜN SONU ────────────────────────────────────────────────────────────────
 async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1141,7 +1347,8 @@ def main():
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            IL:        [CallbackQueryHandler(il_sec)],
+            IL:        [CallbackQueryHandler(giris_cb, pattern=r"^giris_"),
+                        CallbackQueryHandler(il_sec)],
             ILCE:      [CallbackQueryHandler(ilce_sec)],
             URUN:      [CallbackQueryHandler(urun_sec)],
             GRAM:      [CallbackQueryHandler(gram_sec)],
@@ -1157,7 +1364,11 @@ def main():
     app.add_handler(CommandHandler("urunler",    urunler_goster))
     app.add_handler(CommandHandler("odeme",      odeme_yonetim))
     app.add_handler(CommandHandler("gunsonu",    gunsonu))
-    app.add_handler(CommandHandler("musteriler", musteriler_goster))
+    app.add_handler(CommandHandler("musteriler",    musteriler_goster))
+    app.add_handler(CommandHandler("ayarlar",        ayarlar_menu))
+    app.add_handler(CallbackQueryHandler(ayarlar_cb, pattern=r"^ay_"))
+    app.add_handler(CommandHandler("kurallar_ayarla", kurallar_ayarla))
+    app.add_handler(CallbackQueryHandler(giris_cb, pattern=r"^giris_"))
 
     app.add_handler(CallbackQueryHandler(adm_cb,         pattern=r"^(ks:|ksg:|yeni_k:|tamam|onay:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,          pattern=r"^ke_"))
