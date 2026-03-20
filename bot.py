@@ -594,16 +594,10 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     s = siparisler[no]
 
-    # İki fotoğraf da alınsın ama tek dekont mesajı gitsin
+    # İki fotoğraf gelirse sadece müşteriye bilgi ver, admine tekrar gönderme
     if s.get("dekont_gonderildi"):
-        # İkinci fotoğrafı da admine gönder ama müşteriye tekrar mesaj atma
-        kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}"),
-               InlineKeyboardButton(f"❌ Reddet — {no}", callback_data=f"ret:{no}")]]
-        await context.bot.send_photo(
-            chat_id=ADMIN_ID,
-            photo=update.message.photo[-1].file_id,
-            caption=f"Ek Fotograf\nNo: {no}",
-            reply_markup=InlineKeyboardMarkup(kb)
+        await update.message.reply_text(
+            f"Dekontunuz zaten alindi!\nSiparis No: {no}\n\nAdmin onayı bekleniyor."
         )
         return
 
