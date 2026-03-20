@@ -517,6 +517,16 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del adm[uid]
             await update.message.reply_text("Giris gorseli ayarlandi!\n\n/start ile test edebilirsin.")
             return
+        if uid in adm and adm[uid].get("adim") == "u_foto":
+            hid = adm[uid].get("hid")
+            if hid and isinstance(havuz.get(hid), dict):
+                havuz[hid]["foto_id"] = update.message.photo[-1].file_id
+                kaydet(H_DOSYA, havuz)
+                del adm[uid]
+                await update.message.reply_text(f"✅ Urun gorseli kaydedildi!")
+            else:
+                await update.message.reply_text("Hata: urun bulunamadi.")
+            return
         if uid in adm and adm[uid].get("adim") == "foto":
             adm[uid]["foto_id"] = update.message.photo[-1].file_id
             adm[uid]["adim"]    = "konum"
