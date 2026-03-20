@@ -851,10 +851,12 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if a["adim"] == "yeni_il":
             if txt not in konumlar: konumlar[txt] = {}; kaydet(K_DOSYA, konumlar)
-            del adm[uid]
-            kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"ke_il:{il}")] for il in konumlar]
-            kb.append([InlineKeyboardButton("➕ Yeni Il", callback_data="ke_yeni_il")])
-            await update.message.reply_text(f"'{txt}' eklendi!", reply_markup=InlineKeyboardMarkup(kb))
+            # adm'ı silme, ilçe seçimine yönlendir
+            adm[uid] = {"adim": "il_secildi", "il": txt}
+            ilceler = list(konumlar.get(txt, {}).keys())
+            kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{txt}:{ilce}")] for ilce in ilceler]
+            kb.append([InlineKeyboardButton("➕ Yeni Ilce", callback_data=f"ke_yeni_ilce:{txt}")])
+            await update.message.reply_text(f"'{txt}' eklendi!\n\nIlce sec:", reply_markup=InlineKeyboardMarkup(kb))
             return
 
         elif a["adim"] == "yeni_ilce":
