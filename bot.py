@@ -441,6 +441,13 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
+    async def edit(txt, kb=None):
+        if q.message.photo:
+            await q.edit_message_caption(caption=txt, reply_markup=kb)
+        else:
+            await q.edit_message_text(txt, reply_markup=kb)
+
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
     if q.data == "geri_odeme":
@@ -503,7 +510,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kaydet(K_DOSYA, konumlar)
         kaydet(S_DOSYA, siparisler)
         yontem = "Havale/EFT" if context.user_data.get("odeme_yontemi") == "odeme_iban" else "TRC20 (USDT)"
-        await q.edit_message_text(
+        await edit(
             f"Siparisıniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\nDekontu gonderin."
         )
 
