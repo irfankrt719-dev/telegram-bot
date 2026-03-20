@@ -203,9 +203,15 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         aktif = [il for il, ilceler in konumlar.items()
                  if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
         if not aktif:
-            await q.answer("Su an hizmet verilen bolge yok!", show_alert=True)
-            return
-        kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
+            # Konum yoksa il listesini yine de göster
+            iller = list(konumlar.keys())
+            if not iller:
+                await edit("Su an aktif bolge bulunmuyor.\nLutfen daha sonra tekrar deneyin.", 
+                           InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")]]))
+                return
+            kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in iller]
+        else:
+            kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
         try:
             await q.message.delete()
