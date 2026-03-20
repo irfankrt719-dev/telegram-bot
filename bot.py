@@ -99,8 +99,11 @@ def ilce_aktif_konumlar(il, ilce):
             if not k.get("silindi") and k.get("foto_id") and k.get("urun")]
 
 def ilce_urunler(il, ilce):
+    """Sadece rezervesiz konumların ürünlerini göster"""
     sonuc = {}
-    for k in ilce_aktif_konumlar(il, ilce):
+    for k in konumlar.get(il, {}).get(ilce, []):
+        if k.get("silindi") or k.get("rezerve") or not k.get("foto_id") or not k.get("urun"):
+            continue
         u  = k.get("urun", {})
         ad = u.get("ad", "?")
         g  = str(u.get("gram", "?"))
@@ -121,7 +124,23 @@ def ilce_konum_bul(il, ilce, urun_ad, gram):
     return None
 
 def ilce_konum_sayisi(il, ilce):
+    """Toplam aktif konum (rezerveli + boş)"""
     return len(ilce_aktif_konumlar(il, ilce))
+
+def ilce_bos_konum_sayisi(il, ilce):
+    """Sadece rezervesiz boş konumlar"""
+    return sum(1 for k in konumlar.get(il, {}).get(ilce, [])
+               if not k.get("silindi") and not k.get("rezerve") and k.get("foto_id") and k.get("urun"))
+
+def ilce_bos_konum_bul(il, ilce, urun_ad, gram):
+    """Rezervesiz ilk uygun konumu bul"""
+    for k in konumlar.get(il, {}).get(ilce, []):
+        if k.get("silindi") or k.get("rezerve"):
+            continue
+        u = k.get("urun", {})
+        if u.get("ad") == urun_ad and str(u.get("gram")) == str(gram):
+            return k
+    return None
 
 # Müşteri takip
 def musteri_tamamlanan(uid):
@@ -358,7 +377,25 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_ilce")],
         [InlineKeyboardButton("❌ Iptal",           callback_data="iptal")],
     ]
-    await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+    # Ürünün fotoğrafı varsa fotoğraflı gönder
+    urun_foto = None
+    for hid, hu in havuz.items():
+        if isinstance(hu, dict) and hu.get("ad") == urun_ad and hu.get("foto_id"):
+            urun_foto = hu["foto_id"]
+            break
+
+    if urun_foto:
+        try:
+            await q.message.delete()
+        except:
+            pass
+        await q.message.chat.send_photo(
+            photo=urun_foto,
+            caption=ozet,
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+    else:
+        await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
 
 async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -451,6 +488,19 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "odeme":      context.user_data.get("odeme_yontemi", ""),
             "durum":      "beklemede"
         }
+        # Konumu rezerve et
+        il      = siparisler[no]["il"]
+        ilce    = siparisler[no]["ilce"]
+        urun_ad = siparisler[no]["urun_ad"]
+        gram    = siparisler[no]["gram"]
+        rezerve_k = ilce_bos_konum_bul(il, ilce, urun_ad, gram)
+        if rezerve_k:
+            for km in konumlar.get(il, {}).get(ilce, []):
+                if km["id"] == rezerve_k["id"]:
+                    km["rezerve"]    = True
+                    km["rezerve_no"] = no
+                    break
+            kaydet(K_DOSYA, konumlar)
         kaydet(S_DOSYA, siparisler)
         yontem = "Havale/EFT" if context.user_data.get("odeme_yontemi") == "odeme_iban" else "TRC20 (USDT)"
         await q.edit_message_text(
@@ -579,7 +629,15 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.answer(f"Zaten {s['durum']}!", show_alert=True)
             return
         il = s["il"]; ilce = s["ilce"]
-        k  = ilce_konum_bul(il, ilce, s["urun_ad"], s["gram"])
+        # Önce bu siparişe rezerveli konumu bul
+        k = None
+        for km in konumlar.get(il, {}).get(ilce, []):
+            if km.get("rezerve_no") == no and not km.get("silindi"):
+                k = km
+                break
+        # Yoksa normal ara
+        if not k:
+            k = ilce_konum_bul(il, ilce, s["urun_ad"], s["gram"])
         if not k:
             await q.edit_message_caption(f"{il}/{ilce} icin musait konum yok!")
             return
@@ -592,7 +650,9 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=mid, text=f"Teslimata hazir!\nNo: {no}\n\nIyi gunler!")
         for km in konumlar.get(il, {}).get(ilce, []):
             if km["id"] == k["id"]:
-                km["silindi"] = True
+                km["silindi"]  = True
+                km["rezerve"]  = False
+                km.pop("rezerve_no", None)
                 break
         kaydet(K_DOSYA, konumlar)
         siparisler[no]["durum"] = "tamamlandi"
@@ -695,7 +755,9 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tip = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         mik = u.get("miktarlar", {}) if isinstance(u, dict) else {}
         mik_txt = "\n".join([f"  {m}: {miktar_fiyat_str(f)}" for m, f in mik.items()]) or "  Miktar yok"
+        foto_durum = "✅ Foto var" if u.get("foto_id") else "❌ Foto yok"
         kb = [
+            [InlineKeyboardButton(f"🖼 Fotograf Ekle/Degistir ({foto_durum})", callback_data=f"u_foto:{hid}")],
             [InlineKeyboardButton("➕ Miktar/Fiyat Ekle", callback_data=f"u_mik_ekle:{hid}")],
             [InlineKeyboardButton("➖ Miktar Sil",        callback_data=f"u_mik_sil:{hid}")],
             [InlineKeyboardButton("🗑 Urunu Sil",         callback_data=f"u_sil:{hid}")],
@@ -736,6 +798,11 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kaydet(H_DOSYA, havuz)
         await q.edit_message_text(f"'{mik_ad}' silindi!")
 
+    elif d.startswith("u_foto:"):
+        hid = d.split(":")[1]
+        adm[ADMIN_ID] = {"adim": "u_foto", "hid": hid}
+        await q.edit_message_text("Urun fotografini gonder:")
+
     elif d.startswith("u_sil:"):
         hid = d.split(":")[1]
         u   = havuz.pop(hid, {})
@@ -749,6 +816,18 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         adm[ADMIN_ID]["adim"] = "u_miktar"
         ipucu = {"gram": "örn: 7g", "tekli": "örn: 10 Adet", "kutu": "örn: 3 Kutu"}.get(tip, "")
         await q.edit_message_text(f"Yeni miktari yaz ({ipucu}):")
+
+    elif d == "u_gorsel_ekle":
+        # Önce kaydet, sonra fotoğraf iste
+        islem     = adm.get(ADMIN_ID, {})
+        ad        = islem.get("urun_ad", "")
+        hid       = islem.get("hid", f"h{int(time.time())}")
+        tip       = islem.get("tip", "gram")
+        miktarlar = islem.get("miktarlar", {})
+        havuz[hid] = {"ad": ad, "tip": tip, "miktarlar": miktarlar, "foto_id": ""}
+        kaydet(H_DOSYA, havuz)
+        adm[ADMIN_ID] = {"adim": "u_foto", "hid": hid}
+        await q.edit_message_text(f"'{ad}' kaydedildi!\n\nSimdi urun fotografini gonder:")
 
     elif d == "u_gramaj_kaydet":
         islem    = adm.get(ADMIN_ID, {})
@@ -905,7 +984,8 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     mik_txt = "  ".join([f"{mk}: {miktar_fiyat_str(fv)}" for mk, fv in a["miktarlar"].items()])
                     kb = [
                         [InlineKeyboardButton("➕ Baska Miktar Ekle", callback_data="u_gramaj_devam")],
-                        [InlineKeyboardButton("✅ Kaydet",             callback_data="u_gramaj_kaydet")],
+                        [InlineKeyboardButton("✅ Kaydet (Gorselsiz)", callback_data="u_gramaj_kaydet")],
+                        [InlineKeyboardButton("🖼 Gorsel Ekle ve Kaydet", callback_data="u_gorsel_ekle")],
                     ]
                     await update.message.reply_text(f"Eklendi!\n\n{mik_txt}", reply_markup=InlineKeyboardMarkup(kb))
                 else:
@@ -966,13 +1046,16 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for ilce, liste in ilceler.items():
             kalan = ilce_konum_sayisi(il, ilce)
             e   = "🟢" if kalan > 3 else ("🟡" if kalan > 0 else "🔴")
-            msg = f"{e} {il}/{ilce} — {kalan} aktif / {len(liste)} toplam\n─────────────────"
+            rezerveli = sum(1 for k in liste if k.get("rezerve") and not k.get("silindi"))
+            bos       = kalan - rezerveli
+            msg = f"{e} {il}/{ilce} — {bos} bos / {rezerveli} rezerveli / {len(liste)} toplam\n─────────────────"
             n   = 0
             for k in liste:
                 if k.get("silindi"): continue
                 n += 1
-                u  = k.get("urun", {})
-                msg += f"\n#{n}  {u.get('ad','?')} {u.get('gram','?')} — {miktar_fiyat_str(u.get('fiyat',{}))}\n  📍 {k.get('lat',0):.4f}, {k.get('lon',0):.4f}"
+                u    = k.get("urun", {})
+                rzv  = " 🔒 REZERVE" if k.get("rezerve") else ""
+                msg += f"\n#{n}  {u.get('ad','?')} {u.get('gram','?')} — {miktar_fiyat_str(u.get('fiyat',{}))}  {rzv}\n  📍 {k.get('lat',0):.4f}, {k.get('lon',0):.4f}"
             if n == 0:
                 msg += "\n\nAktif konum yok."
             await update.message.reply_text(msg)
