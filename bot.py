@@ -200,14 +200,16 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.edit_message_text(txt, reply_markup=kb)
 
     if q.data == "giris_alisveris":
+        context.user_data.clear()
         aktif = [il for il, ilceler in konumlar.items()
                  if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
         if not aktif:
             await q.answer("Su an hizmet verilen bolge yok!", show_alert=True)
-            return IL
+            return
         kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
         await edit("Il secin:", InlineKeyboardMarkup(kb))
+        context.user_data["conv_active"] = True
 
     elif q.data == "giris_kurallar":
         kural = ayarlar.get("market_kurali", "Henuz yazilmamis.")
@@ -221,8 +223,6 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.chat.send_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
         else:
             await edit(giris_metni(user), giris_kb())
-
-    return IL
 
 # ─── MÜŞTERİ AKIŞI ───────────────────────────────────────────────────────────
 async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1099,6 +1099,15 @@ def main():
     app.add_handler(CommandHandler("gunsonu",     gunsonu))
     app.add_handler(CommandHandler("musteriler",  musteriler_goster))
     app.add_handler(CommandHandler("ayarlar",     ayarlar_menu))
+
+    # Giriş ve alışveriş butonları - ConversationHandler dışında global
+    app.add_handler(CallbackQueryHandler(giris_cb, pattern=r"^giris_"))
+    app.add_handler(CallbackQueryHandler(il_sec,   pattern=r"^il:"))
+    app.add_handler(CallbackQueryHandler(ilce_sec, pattern=r"^ilce:"))
+    app.add_handler(CallbackQueryHandler(urun_sec, pattern=r"^urun:"))
+    app.add_handler(CallbackQueryHandler(gram_sec, pattern=r"^gram:"))
+    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme)"))
+    app.add_handler(CallbackQueryHandler(odeme,    pattern=r"^(onayla|geri_odeme|iptal)"))
 
     app.add_handler(CallbackQueryHandler(adm_cb,      pattern=r"^(ks:|ksg:|yeni_k:|tamam|onay:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,        pattern=r"^(ke_|yeni_k:)"))
