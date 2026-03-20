@@ -374,7 +374,7 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [
         [InlineKeyboardButton("🏦 IBAN / Havale", callback_data="odeme_iban")],
         [InlineKeyboardButton("💎 TRC20 (USDT)",  callback_data="odeme_trc20")],
-        [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_ilce")],
+        [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_odeme_sec")],
         [InlineKeyboardButton("❌ Iptal",           callback_data="iptal")],
     ]
     # Ürünün fotoğrafı varsa fotoğraflı gönder
@@ -400,18 +400,48 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
+    async def edit(txt, kb=None):
+        try:
+            if q.message.photo:
+                await q.edit_message_caption(caption=txt, reply_markup=kb)
+            else:
+                await q.edit_message_text(txt, reply_markup=kb)
+        except Exception as e:
+            logger.error(f"edit hatasi: {e}")
+
     if q.data == "iptal":
-        await q.edit_message_text("Iptal edildi.")
-    if q.data == "geri_ilce":
-        il   = context.user_data["il"]
-        ilce = context.user_data["ilce"]
-        urun_ad = context.user_data["urun_ad"]
+        no = context.user_data.get("no")
+        if no and no in siparisler:
+            il   = context.user_data.get("il")
+            ilce = context.user_data.get("ilce")
+            for km in konumlar.get(il, {}).get(ilce, []):
+                if km.get("rezerve_no") == no:
+                    km["rezerve"] = False
+                    km.pop("rezerve_no", None)
+                    break
+            kaydet(K_DOSYA, konumlar)
+            del siparisler[no]
+            kaydet(S_DOSYA, siparisler)
+        await edit("Iptal edildi.")
+        return
+
+    if q.data in ("geri_ilce", "geri_odeme_sec"):
+        il      = context.user_data.get("il", "")
+        ilce    = context.user_data.get("ilce", "")
+        urun_ad = context.user_data.get("urun_ad", "")
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
         kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await q.edit_message_text("Miktar secin:", reply_markup=InlineKeyboardMarkup(kb))
+        try:
+            await q.message.delete()
+        except:
+            pass
+        await q.message.chat.send_message("Miktar secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
     if q.data in ("odeme_iban", "odeme_trc20"):
         context.user_data["odeme_yontemi"] = q.data
         no      = context.user_data.get("no", "?")
@@ -436,7 +466,11 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Geri",            callback_data="geri_odeme")],
             [InlineKeyboardButton("❌ Iptal",            callback_data="iptal")],
         ]
-        await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        try:
+            await q.message.delete()
+        except:
+            pass
+        await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
 
 async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1185,11 +1219,11 @@ def main():
     # Callback handlers - sıra önemli, önce özel pattern'ler
     app.add_handler(CallbackQueryHandler(giris_cb,  pattern=r"^giris_"))
     app.add_handler(CallbackQueryHandler(il_sec,    pattern=r"^il:"))
-    app.add_handler(CallbackQueryHandler(ilce_sec,  pattern=r"^(ilce:|geri_il$)"))
-    app.add_handler(CallbackQueryHandler(urun_sec,  pattern=r"^(urun:|geri_il$)"))
-    app.add_handler(CallbackQueryHandler(gram_sec,  pattern=r"^(gram:|geri_ilce$)"))
-    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce$)"))
-    app.add_handler(CallbackQueryHandler(odeme,     pattern=r"^(onayla|geri_odeme$|iptal$)"))
+    app.add_handler(CallbackQueryHandler(ilce_sec,  pattern=r"^(ilce:|geri_il)"))
+    app.add_handler(CallbackQueryHandler(urun_sec,  pattern=r"^(urun:)"))
+    app.add_handler(CallbackQueryHandler(gram_sec,  pattern=r"^gram:"))
+    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme_sec)"))
+    app.add_handler(CallbackQueryHandler(odeme,     pattern=r"^(onayla|geri_odeme|iptal)"))
 
     app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,      pattern=r"^ke_"))
