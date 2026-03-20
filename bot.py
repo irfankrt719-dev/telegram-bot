@@ -575,17 +575,43 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
         return
+    # Beklemede olan siparişi bul
     no = context.user_data.get("no")
+    if no and (no not in siparisler or siparisler[no].get("durum") != "beklemede"):
+        no = None
     if not no:
         for n, s in siparisler.items():
             if str(s["user_id"]) == str(uid) and s["durum"] == "beklemede":
                 no = n
                 break
+
     if not no or no not in siparisler:
-        await update.message.reply_text("Aktif siparisıniz yok. /start ile baslayin.")
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🛒 Siparis Olustur", url=f"https://t.me/{(await context.bot.get_me()).username}")]])
+        await update.message.reply_text(
+            "Aktif siparisıniz bulunmuyor.\nSiparis olusturmak icin /start yazin.",
+        )
         return
-    s  = siparisler[no]
-    kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}")]]
+
+    s = siparisler[no]
+
+    # İki fotoğraf da alınsın ama tek dekont mesajı gitsin
+    if s.get("dekont_gonderildi"):
+        # İkinci fotoğrafı da admine gönder ama müşteriye tekrar mesaj atma
+        kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}"),
+               InlineKeyboardButton(f"❌ Reddet — {no}", callback_data=f"ret:{no}")]]
+        await context.bot.send_photo(
+            chat_id=ADMIN_ID,
+            photo=update.message.photo[-1].file_id,
+            caption=f"Ek Fotograf\nNo: {no}",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        return
+
+    siparisler[no]["dekont_gonderildi"] = True
+    kaydet(S_DOSYA, siparisler)
+
+    kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}"),
+           InlineKeyboardButton(f"❌ Reddet — {no}", callback_data=f"ret:{no}")]]
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
         photo=update.message.photo[-1].file_id,
@@ -669,6 +695,43 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif d == "tamam":
         await q.edit_message_text("Tamamlandi! /konum_ekle ile yeni konum ekleyebilirsin.")
+
+    elif d.startswith("ret:"):
+        no = d.split(":")[1]
+        s  = siparisler.get(no)
+        if not s:
+            await q.answer("Siparis bulunamadi!", show_alert=True)
+            return
+        if s["durum"] in ("tamamlandi",):
+            await q.answer("Siparis zaten tamamlandi!", show_alert=True)
+            return
+        # Rezerveyi serbest bırak
+        il   = s.get("il", "")
+        ilce = s.get("ilce", "")
+        for km in konumlar.get(il, {}).get(ilce, []):
+            if km.get("rezerve_no") == no:
+                km["rezerve"] = False
+                km.pop("rezerve_no", None)
+                break
+        kaydet(K_DOSYA, konumlar)
+        siparisler[no]["durum"] = "reddedildi"
+        kaydet(S_DOSYA, siparisler)
+        # Müşteriye bildirim
+        mid = s["user_id"]
+        red_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛒 Alisverise Basla", callback_data="giris_alisveris")],
+            [InlineKeyboardButton("🆘 Destek", url=ayarlar.get("destek_link", "https://t.me/destekkullanici"))],
+        ])
+        await context.bot.send_message(
+            chat_id=mid,
+            text=(
+                f"Siparisıniz reddedildi.\n\n"
+                f"Siparis No: {no}\n\n"
+                f"Detayli bilgi icin destek hattimizla iletisime gecebilirsiniz."
+            ),
+            reply_markup=red_kb
+        )
+        await q.edit_message_caption(f"Reddedildi! {no}")
 
     elif d.startswith("onay:"):
         no = d.split(":")[1]
@@ -1225,7 +1288,7 @@ def main():
     app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme_sec)"))
     app.add_handler(CallbackQueryHandler(odeme,     pattern=r"^(onayla|geri_odeme|iptal)"))
 
-    app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:)"))
+    app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:|ret:)"))
     app.add_handler(CallbackQueryHandler(ke_cb,      pattern=r"^ke_"))
     app.add_handler(CallbackQueryHandler(urun_cb,    pattern=r"^u_"))
     app.add_handler(CallbackQueryHandler(odeme_cb,   pattern=r"^ody_"))
