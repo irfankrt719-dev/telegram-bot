@@ -673,6 +673,8 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── ADMİN: /konum_ekle ──────────────────────────────────────────────────────
 async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
+    uid = update.effective_user.id
+    if uid in adm: del adm[uid]
     iller = list(konumlar.keys())
     kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"ke_il:{il}")] for il in iller]
     kb.append([InlineKeyboardButton("➕ Yeni Il", callback_data="ke_yeni_il")])
@@ -727,6 +729,8 @@ async def goster_havuz(hedef):
 
 async def urunler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
+    uid = update.effective_user.id
+    if uid in adm: del adm[uid]  # Önceki yarım işlemi temizle
     await goster_havuz(update.message)
 
 async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -844,6 +848,8 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── ADMİN: /ayarlar ─────────────────────────────────────────────────────────
 async def ayarlar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
+    uid = update.effective_user.id
+    if uid in adm: del adm[uid]
     await goster_ayarlar(update.message)
 
 async def goster_ayarlar(hedef):
