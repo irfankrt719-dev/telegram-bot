@@ -11,6 +11,23 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "BURAYA_TOKEN")
 ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
 
+# Admin dosyası
+ADM_DOSYA = "adminler.json"
+
+def adminler_yukle():
+    if os.path.exists(ADM_DOSYA):
+        try:
+            with open(ADM_DOSYA, encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    # Varsayılan: sadece süper admin
+    return {str(ADMIN_ID): {"seviye": "super", "ad": "Super Admin"}}
+
+def adminler_kaydet():
+    with open(ADM_DOSYA, "w", encoding="utf-8") as f:
+        json.dump(adminler, f, ensure_ascii=False, indent=2)
+
 IL, ILCE, URUN, GRAM, ODEME_SEC, ODEME = range(6)
 adm = {}
 
@@ -52,6 +69,7 @@ def kaydet(d, data):
     with open(d, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+adminler        = adminler_yukle()
 siparisler      = yukle(S_DOSYA, {})
 konumlar        = yukle(K_DOSYA, {})
 havuz           = yukle(H_DOSYA, HAVUZ_VARSAYILAN)
@@ -250,6 +268,24 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.chat.send_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
         else:
             await edit(giris_metni(user), giris_kb())
+
+
+# ─── YETKİ KONTROL ───────────────────────────────────────────────────────────
+def is_super(uid):
+    return str(uid) == str(ADMIN_ID) or adminler.get(str(uid), {}).get("seviye") == "super"
+
+def is_yonetici(uid):
+    return is_super(uid) or adminler.get(str(uid), {}).get("seviye") == "yonetici"
+
+def is_saha(uid):
+    return is_yonetici(uid) or adminler.get(str(uid), {}).get("seviye") == "saha"
+
+def seviye_adi(uid):
+    if is_super(uid): return "🔴 Super Admin"
+    s = adminler.get(str(uid), {}).get("seviye", "")
+    if s == "yonetici": return "🟡 Yonetici"
+    if s == "saha": return "🟢 Saha"
+    return "❌ Yetkisiz"
 
 # ─── MÜŞTERİ AKIŞI ───────────────────────────────────────────────────────────
 async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -551,7 +587,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── DEKONT ──────────────────────────────────────────────────────────────────
 async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    if uid == ADMIN_ID:
+    if is_saha(uid):
         if uid in adm and adm[uid].get("adim") == "giris_foto":
             ayarlar["giris_foto_id"] = update.message.photo[-1].file_id
             kaydet(A_DOSYA, ayarlar)
@@ -573,7 +609,8 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
             adm[uid]["adim"]    = "konum"
             await update.message.reply_text("Fotograf kaydedildi!\n\nSimdi konumu gonder:")
             return
-        await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
+        if is_super(uid):
+            await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
         return
     # Beklemede olan siparişi bul
     no = context.user_data.get("no")
@@ -622,7 +659,7 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── KONUM ───────────────────────────────────────────────────────────────────
 async def konum_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    if uid != ADMIN_ID:
+    if not is_yonetici(uid):
         return
     if uid not in adm or adm[uid].get("adim") != "konum":
         await update.message.reply_text("Aktif konum ekleme islemi yok.")
@@ -646,7 +683,7 @@ async def konum_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── ADMİN CALLBACK ──────────────────────────────────────────────────────────
 async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
+    if not is_saha(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True)
         return
     await q.answer()
@@ -780,7 +817,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── ADMİN: /konum_ekle ──────────────────────────────────────────────────────
 async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_yonetici(update.effective_user.id): return
     uid = update.effective_user.id
     if uid in adm: del adm[uid]
     iller = list(konumlar.keys())
@@ -790,7 +827,7 @@ async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
+    if not is_yonetici(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     d = q.data
@@ -836,14 +873,14 @@ async def goster_havuz(hedef):
         await hedef.edit_message_text(msg, reply_markup=markup)
 
 async def urunler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_yonetici(update.effective_user.id): return
     uid = update.effective_user.id
     if uid in adm: del adm[uid]  # Önceki yarım işlemi temizle
     await goster_havuz(update.message)
 
 async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
+    if not is_yonetici(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     d = q.data
@@ -955,7 +992,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── ADMİN: /ayarlar ─────────────────────────────────────────────────────────
 async def ayarlar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_yonetici(update.effective_user.id): return
     uid = update.effective_user.id
     if uid in adm: del adm[uid]
     await goster_ayarlar(update.message)
@@ -981,7 +1018,7 @@ async def goster_ayarlar(hedef):
 
 async def ayarlar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
+    if not is_yonetici(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     d = q.data
@@ -1011,7 +1048,7 @@ async def ayarlar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── ADMİN: /odeme ───────────────────────────────────────────────────────────
 async def odeme_yonetim(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_yonetici(update.effective_user.id): return
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🏦 IBAN Duzenle",  callback_data="ody_iban")],
         [InlineKeyboardButton("💎 TRC20 Duzenle", callback_data="ody_trc20")],
@@ -1024,7 +1061,7 @@ async def odeme_yonetim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
+    if not is_yonetici(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     if q.data == "ody_iban":
@@ -1039,7 +1076,7 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     txt = update.message.text.strip()
 
-    if uid == ADMIN_ID and uid in adm:
+    if is_saha(uid) and uid in adm:
         a = adm[uid]
 
         if a["adim"] == "yeni_il":
@@ -1134,6 +1171,25 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Market kurallari guncellendi!")
             return
 
+        elif a["adim"] == "adm_id_bekle":
+            try:
+                yeni_uid = int(txt.strip())
+                adm[uid] = {"adim": "adm_ad_bekle", "yeni_uid": yeni_uid}
+                await update.message.reply_text(f"ID: {yeni_uid}\n\nBu adminin adini yaz:")
+            except:
+                await update.message.reply_text("Gecersiz ID! Sadece rakam gir.")
+            return
+
+        elif a["adim"] == "adm_ad_bekle":
+            yeni_uid = a.get("yeni_uid")
+            sev_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🟡 Yonetici", callback_data=f"adm_sev_yeni:{yeni_uid}:{txt}:yonetici")],
+                [InlineKeyboardButton("🟢 Saha",     callback_data=f"adm_sev_yeni:{yeni_uid}:{txt}:saha")],
+            ])
+            del adm[uid]
+            await update.message.reply_text(f"Ad: {txt}\nSeviyeyi sec:", reply_markup=sev_kb)
+            return
+
         elif a["adim"] == "iban_guncelle":
             odeme_bilgileri["iban"] = "Odeme Yontemi: IBAN / Havale\n─────────────────\n" + txt
             kaydet(O_DOSYA, odeme_bilgileri)
@@ -1152,7 +1208,7 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── KOMUTLAR ────────────────────────────────────────────────────────────────
 async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_saha(update.effective_user.id): return
     if not konumlar:
         await update.message.reply_text("Hic konum yok.")
         return
@@ -1175,7 +1231,7 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(msg)
 
 async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_yonetici(update.effective_user.id): return
     if not siparisler:
         await update.message.reply_text("Henuz siparis yok.")
         return
@@ -1186,7 +1242,7 @@ async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_yonetici(update.effective_user.id): return
     if not musteriler:
         await update.message.reply_text("Henuz musteri yok.")
         return
@@ -1200,7 +1256,7 @@ async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if not is_super(update.effective_user.id): return
     toplam = tamamlanan = bekleyen = 0
     gelir_tl = gelir_usd = 0.0
     iban_adet = trc20_adet = 0
@@ -1240,7 +1296,7 @@ async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def gunsonu_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if q.from_user.id != ADMIN_ID:
+    if not is_super(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     if q.data == "gunsonu_sifirla":
@@ -1257,6 +1313,11 @@ async def iptal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("Iptal edildi. /start ile baslayin.")
 
+
+async def id_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    await update.message.reply_text(f"Telegram ID'niz: {uid}")
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -1271,6 +1332,9 @@ def main():
     app.add_handler(CommandHandler("gunsonu",     gunsonu))
     app.add_handler(CommandHandler("musteriler",  musteriler_goster))
     app.add_handler(CommandHandler("ayarlar",     ayarlar_menu))
+    app.add_handler(CommandHandler("adminler",    adminler_menu))
+    app.add_handler(CommandHandler("id",          id_goster))
+    app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_"))
     app.add_handler(CommandHandler("iptal",       iptal))
 
     # Callback handlers - sıra önemli, önce özel pattern'ler
