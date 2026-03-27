@@ -1255,6 +1255,104 @@ async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg  += f"\n👤 {ad}\n  Tamamlanan: {t} | {durum}\n"
     await update.message.reply_text(msg)
 
+
+# ─── ADMİN YÖNETİMİ ──────────────────────────────────────────────────────────
+async def adminler_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_super(update.effective_user.id):
+        await update.message.reply_text("Yetkisiz!")
+        return
+    msg = "Admin Listesi\n─────────────────\n"
+    for uid, a in adminler.items():
+        msg += f"\n{seviye_adi(int(uid))}\n  {a.get('ad','?')} (ID: {uid})\n"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Admin Ekle",       callback_data="adm_ekle")],
+        [InlineKeyboardButton("➖ Admin Sil",        callback_data="adm_sil_liste")],
+        [InlineKeyboardButton("🔄 Seviye Degistir",  callback_data="adm_seviye_liste")],
+    ])
+    await update.message.reply_text(msg, reply_markup=kb)
+
+async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_super(q.from_user.id):
+        await q.answer("Yetkisiz!", show_alert=True)
+        return
+    await q.answer()
+    d = q.data
+
+    if d == "adm_ekle":
+        adm[ADMIN_ID] = {"adim": "adm_id_bekle"}
+        await q.edit_message_text(
+            "Eklenecek adminin Telegram ID'sini yaz:\n\n"
+            "Kullanici bota /id yazarsa ID'sini ogrenir."
+        )
+
+    elif d == "adm_sil_liste":
+        silinebilir = {uid: a for uid, a in adminler.items() if uid != str(ADMIN_ID)}
+        if not silinebilir:
+            await q.answer("Silinecek admin yok!", show_alert=True)
+            return
+        kb = [[InlineKeyboardButton(f"🗑 {a.get('ad','?')} ({uid})", callback_data=f"adm_sil:{uid}")]
+              for uid, a in silinebilir.items()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="adm_geri")])
+        await q.edit_message_text("Kimi silmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("adm_sil:"):
+        uid = d.split(":")[1]
+        ad  = adminler.pop(uid, {}).get("ad", "?")
+        adminler_kaydet()
+        await q.edit_message_text(f"'{ad}' admin listesinden silindi!")
+
+    elif d == "adm_seviye_liste":
+        silinebilir = {uid: a for uid, a in adminler.items() if uid != str(ADMIN_ID)}
+        if not silinebilir:
+            await q.answer("Degistirilecek admin yok!", show_alert=True)
+            return
+        kb = [[InlineKeyboardButton(f"{seviye_adi(int(uid))} — {a.get('ad','?')}", callback_data=f"adm_sev_sec:{uid}")]
+              for uid, a in silinebilir.items()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="adm_geri")])
+        await q.edit_message_text("Kimin seviyesini degistirmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("adm_sev_sec:"):
+        uid = d.split(":")[1]
+        ad  = adminler.get(uid, {}).get("ad", "?")
+        kb = [
+            [InlineKeyboardButton("🟡 Yonetici", callback_data=f"adm_sev_yap:{uid}:yonetici")],
+            [InlineKeyboardButton("🟢 Saha",     callback_data=f"adm_sev_yap:{uid}:saha")],
+            [InlineKeyboardButton("⬅️ Geri",     callback_data="adm_seviye_liste")],
+        ]
+        await q.edit_message_text(f"{ad} icin yeni seviye sec:", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("adm_sev_yap:"):
+        p   = d.split(":")
+        uid = p[1]
+        sev = p[2]
+        if uid in adminler:
+            adminler[uid]["seviye"] = sev
+            adminler_kaydet()
+        await q.edit_message_text(f"Seviye guncellendi: {adminler.get(uid,{}).get('ad','?')} → {sev}")
+
+    elif d.startswith("adm_sev_yeni:"):
+        p    = d.split(":")
+        uid2 = p[1]
+        ad2  = p[2]
+        sev2 = p[3]
+        adminler[uid2] = {"seviye": sev2, "ad": ad2}
+        adminler_kaydet()
+        await q.edit_message_text(
+            f"Admin eklendi!\n\n{seviye_adi(int(uid2))}\n{ad2} (ID: {uid2})"
+        )
+
+    elif d == "adm_geri":
+        msg = "Admin Listesi\n─────────────────\n"
+        for uid, a in adminler.items():
+            msg += f"\n{seviye_adi(int(uid))}\n  {a.get('ad','?')} (ID: {uid})\n"
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Admin Ekle",       callback_data="adm_ekle")],
+            [InlineKeyboardButton("➖ Admin Sil",        callback_data="adm_sil_liste")],
+            [InlineKeyboardButton("🔄 Seviye Degistir",  callback_data="adm_seviye_liste")],
+        ])
+        await q.edit_message_text(msg, reply_markup=kb)
+
 async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_super(update.effective_user.id): return
     toplam = tamamlanan = bekleyen = 0
