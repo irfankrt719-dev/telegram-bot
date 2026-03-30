@@ -1,7 +1,7 @@
 """
 Telegram Sipariş Botu - Temiz Versiyon
 """
-import logging, json, os, time
+import logging, json, os, time, random, string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -14,6 +14,7 @@ ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
 # Admin dosyası
 ADM_DOSYA = "adminler.json"
 C_DOSYA   = "ciro.json"
+KOD_DOSYA = "kodlar.json"
 
 def adminler_yukle():
     if os.path.exists(ADM_DOSYA):
@@ -71,6 +72,7 @@ def kaydet(d, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 adminler        = adminler_yukle()
+kodlar          = yukle(KOD_DOSYA, {})
 ciro            = yukle(C_DOSYA, {"toplam_tl": 0, "toplam_usd": 0, "gunler": []})
 siparisler      = yukle(S_DOSYA, {})
 konumlar        = yukle(K_DOSYA, {})
@@ -189,6 +191,30 @@ def musteri_guncelle(uid, ad=""):
     musteriler[k]["tamamlanan"] += 1
     kaydet(M_DOSYA, musteriler)
 
+
+def kod_uret(n=6):
+    """n haneli benzersiz büyük harf+rakam kodu üret"""
+    while True:
+        kod = ''.join(random.choices(string.ascii_uppercase + string.digits, k=n))
+        if kod not in kodlar:
+            return kod
+
+def musteri_kayitli_mi(uid):
+    return musteriler.get(str(uid), {}).get("kayitli", False)
+
+def musteri_kaydet_kod(uid, ad, kod):
+    k = str(uid)
+    if k not in musteriler:
+        musteriler[k] = {"tamamlanan": 0, "ad": ad}
+    musteriler[k]["kayitli"] = True
+    musteriler[k]["ad"] = ad
+    kaydet(M_DOSYA, musteriler)
+    # Kodu kullanıldı işaretle
+    if kod in kodlar:
+        kodlar[kod]["kullanildi"] = True
+        kodlar[kod]["kullanan"]   = uid
+        kaydet(KOD_DOSYA, kodlar)
+
 # Giriş ekranı builder
 def giris_kb():
     return InlineKeyboardMarkup([
@@ -219,11 +245,33 @@ def giris_metni(user):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     user = update.effective_user
-    foto = ayarlar.get("giris_foto_id", "")
-    if foto:
-        await update.message.reply_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
-    else:
-        await update.message.reply_text(giris_metni(user), reply_markup=giris_kb())
+    uid  = user.id
+
+    # Admin ise direkt giriş
+    if is_saha(uid):
+        foto = ayarlar.get("giris_foto_id", "")
+        if foto:
+            await update.message.reply_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
+        else:
+            await update.message.reply_text(giris_metni(user), reply_markup=giris_kb())
+        return
+
+    # Kayıtlı müşteri ise direkt giriş
+    if musteri_kayitli_mi(uid):
+        foto = ayarlar.get("giris_foto_id", "")
+        if foto:
+            await update.message.reply_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
+        else:
+            await update.message.reply_text(giris_metni(user), reply_markup=giris_kb())
+        return
+
+    # Kayıtlı değil - referans kodu sor
+    context.user_data["bekleyen_kod"] = True
+    await update.message.reply_text(
+        "Hosgeldiniz!\n\n"
+        "Sisteme giris yapabilmek icin referans kodunuzu girin:\n\n"
+        "(Kod almak icin yetkili kisiyle iletisime gecin)"
+    )
 
 async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1117,8 +1165,31 @@ async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── METİN ───────────────────────────────────────────────────────────────────
 async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    txt = update.message.text.strip()
+    uid  = update.effective_user.id
+    txt  = update.message.text.strip()
+    user = update.effective_user
+
+    # Referans kodu bekleniyor
+    if context.user_data.get("bekleyen_kod") and not is_saha(uid):
+        kod = txt.upper().strip()
+        if kod in kodlar and not kodlar[kod].get("kullanildi"):
+            # Kod geçerli - kayıt et
+            musteri_kaydet_kod(uid, user.first_name or "", kod)
+            context.user_data.pop("bekleyen_kod", None)
+            foto = ayarlar.get("giris_foto_id", "")
+            await update.message.reply_text(
+                f"Hosgeldiniz {user.first_name}! Kaydiniz olusturuldu."
+            )
+            if foto:
+                await update.message.reply_photo(photo=foto, caption=giris_metni(user), reply_markup=giris_kb())
+            else:
+                await update.message.reply_text(giris_metni(user), reply_markup=giris_kb())
+        else:
+            await update.message.reply_text(
+                "Gecersiz veya kullanilmis kod!\n\n"
+                "Lutfen gecerli bir referans kodu girin."
+            )
+        return
 
     if is_saha(uid) and uid in adm:
         a = adm[uid]
@@ -1334,6 +1405,47 @@ async def ciro_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for g in gunler[-10:]:  # Son 10 gün
             msg += f"  {g['tarih']}: {fiyat_str(g['tl'])} TL / {fiyat_str(g['usd'])} USD\n"
 
+    await update.message.reply_text(msg)
+
+
+async def kod_olustur(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_super(update.effective_user.id):
+        await update.message.reply_text("Yetkisiz!")
+        return
+    # Kaç kod oluşturulacak
+    try:
+        adet = int(context.args[0]) if context.args else 1
+        adet = min(adet, 50)  # Max 50
+    except:
+        adet = 1
+
+    yeni_kodlar = []
+    for _ in range(adet):
+        kod = kod_uret(6)
+        kodlar[kod] = {"kullanildi": False, "olusturuldu": time.strftime("%d.%m.%Y %H:%M")}
+        yeni_kodlar.append(kod)
+    kaydet(KOD_DOSYA, kodlar)
+
+    msg = f"{adet} adet referans kodu olusturuldu:\n\n"
+    msg += "\n".join([f"• {k}" for k in yeni_kodlar])
+    await update.message.reply_text(msg)
+
+async def kodlar_listele(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_super(update.effective_user.id):
+        await update.message.reply_text("Yetkisiz!")
+        return
+    if not kodlar:
+        await update.message.reply_text("Hic kod yok. /kod_olustur 10 ile olustur.")
+        return
+    bos    = [k for k, v in kodlar.items() if not v.get("kullanildi")]
+    dolu   = [k for k, v in kodlar.items() if v.get("kullanildi")]
+    msg    = f"Referans Kodlari\n─────────────────\n"
+    msg   += f"Bos: {len(bos)} | Kullanilmis: {len(dolu)}\n\n"
+    if bos:
+        msg += "Kullanilabilir Kodlar:\n"
+        msg += "\n".join([f"• {k}" for k in bos[:30]])
+        if len(bos) > 30:
+            msg += f"\n... ve {len(bos)-30} tane daha"
     await update.message.reply_text(msg)
 
 async def adminler_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1557,6 +1669,8 @@ def main():
     app.add_handler(CommandHandler("adminler",    adminler_menu))
     app.add_handler(CommandHandler("ciro",        ciro_goster))
     app.add_handler(CommandHandler("id",          id_goster))
+    app.add_handler(CommandHandler("kod_olustur", kod_olustur))
+    app.add_handler(CommandHandler("kodlar",      kodlar_listele))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_"))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_sev_sec_"))
     app.add_handler(CommandHandler("iptal",       iptal))
