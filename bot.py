@@ -718,7 +718,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u    = havuz.get(hid, {})
         ad   = u.get("ad", "?")
         mik  = u.get("miktarlar", {})
-        adm[ADMIN_ID] = {"adim": "gramaj_sec", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad, "hid": hid}
+        adm[q.from_user.id] = {"adim": "gramaj_sec", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad, "hid": hid}
         kb   = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"ksg:{hid}:{g}:{il}:{ilce}:{kidx}")]
                 for g, f in mik.items()]
         await q.edit_message_text(f"Urun: {ad}\n\nGramaji sec:", reply_markup=InlineKeyboardMarkup(kb))
@@ -731,7 +731,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fobj = hu.get("miktarlar", {}).get(gram, {})
         konumlar[il][ilce][kidx]["urun"] = {"ad": ad, "gram": gram, "fiyat": fobj}
         kaydet(K_DOSYA, konumlar)
-        if ADMIN_ID in adm: del adm[ADMIN_ID]
+        if ADMIN_ID in adm: del adm[q.from_user.id]
         kalan = ilce_konum_sayisi(il, ilce)
         kb = [
             [InlineKeyboardButton("📍 Ayni Ilceye Yeni Konum", callback_data=f"yeni_k:{il}:{ilce}")],
@@ -744,7 +744,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif d.startswith("yeni_k:"):
         p = d.split(":"); il = p[1]; ilce = p[2]
-        adm[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
+        adm[q.from_user.id] = {"adim": "foto", "il": il, "ilce": ilce}
         await q.edit_message_text(f"{il}/{ilce} icin yeni konum.\n\nFotografi gonder:")
 
     elif d == "tamam":
@@ -876,7 +876,7 @@ async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     d = q.data
     if d == "ke_yeni_il":
-        adm[ADMIN_ID] = {"adim": "yeni_il"}
+        adm[q.from_user.id] = {"adim": "yeni_il"}
         await q.edit_message_text("Yeni il adini yaz:")
     elif d.startswith("ke_il:"):
         il = d.split(":", 1)[1]
@@ -886,15 +886,15 @@ async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"Il: {il}\n\nIlce sec:", reply_markup=InlineKeyboardMarkup(kb))
     elif d.startswith("ke_yeni_ilce:"):
         il = d.split(":", 1)[1]
-        adm[ADMIN_ID] = {"adim": "yeni_ilce", "il": il}
+        adm[q.from_user.id] = {"adim": "yeni_ilce", "il": il}
         await q.edit_message_text(f"{il} icin ilce adini yaz:")
     elif d.startswith("ke_ilce:"):
         p = d.split(":"); il = p[1]; ilce = p[2]
-        adm[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
+        adm[q.from_user.id] = {"adim": "foto", "il": il, "ilce": ilce}
         await q.edit_message_text(f"{il}/{ilce}\n\nFotografi gonder:")
     elif d.startswith("yeni_k:"):
         p = d.split(":"); il = p[1]; ilce = p[2]
-        adm[ADMIN_ID] = {"adim": "foto", "il": il, "ilce": ilce}
+        adm[q.from_user.id] = {"adim": "foto", "il": il, "ilce": ilce}
         await q.edit_message_text(f"{il}/{ilce} icin yeni konum.\n\nFotografi gonder:")
 
 # ─── ADMİN: /urunler ─────────────────────────────────────────────────────────
@@ -930,14 +930,14 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = q.data
 
     if d == "u_ekle":
-        adm[ADMIN_ID] = {"adim": "u_ad"}
+        adm[q.from_user.id] = {"adim": "u_ad"}
         await q.edit_message_text("Yeni urun adini yaz:")
 
     elif d.startswith("u_tip_"):
         tip = d.replace("u_tip_", "")
-        adm[ADMIN_ID]["tip"]  = tip
-        adm[ADMIN_ID]["adim"] = "u_miktar"
-        ad = adm[ADMIN_ID].get("urun_ad", "?")
+        adm[q.from_user.id]["tip"]  = tip
+        adm[q.from_user.id]["adim"] = "u_miktar"
+        ad = adm[q.from_user.id].get("urun_ad", "?")
         ipucu = {"gram": "örn: 1g, 3.5g", "tekli": "örn: 1 Adet", "kutu": "örn: 1 Kutu"}.get(tip, "")
         await q.edit_message_text(f"Urun: {ad} [{tip_label(tip)}]\n\nMiktar yaz ({ipucu}):")
 
@@ -969,7 +969,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u   = havuz.get(hid, {})
         tip = u.get("tip", "gram") if isinstance(u, dict) else "gram"
         ipucu = {"gram": "örn: 7g", "tekli": "örn: 10 Adet", "kutu": "örn: 3 Kutu"}.get(tip, "")
-        adm[ADMIN_ID] = {"adim": "u_miktar", "hid": hid, "yeni": False}
+        adm[q.from_user.id] = {"adim": "u_miktar", "hid": hid, "yeni": False}
         await q.edit_message_text(f"Eklenecek miktari yaz ({ipucu}):")
 
     elif d.startswith("u_mik_sil:"):
@@ -993,7 +993,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif d.startswith("u_foto:"):
         hid = d.split(":")[1]
-        adm[ADMIN_ID] = {"adim": "u_foto", "hid": hid}
+        adm[q.from_user.id] = {"adim": "u_foto", "hid": hid}
         await q.edit_message_text("Urun fotografini gonder:")
 
     elif d.startswith("u_sil:"):
@@ -1006,7 +1006,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d == "u_gramaj_devam":
         islem = adm.get(ADMIN_ID, {})
         tip   = islem.get("tip", "gram")
-        adm[ADMIN_ID]["adim"] = "u_miktar"
+        adm[q.from_user.id]["adim"] = "u_miktar"
         ipucu = {"gram": "örn: 7g", "tekli": "örn: 10 Adet", "kutu": "örn: 3 Kutu"}.get(tip, "")
         await q.edit_message_text(f"Yeni miktari yaz ({ipucu}):")
 
@@ -1019,7 +1019,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         miktarlar = islem.get("miktarlar", {})
         havuz[hid] = {"ad": ad, "tip": tip, "miktarlar": miktarlar, "foto_id": ""}
         kaydet(H_DOSYA, havuz)
-        adm[ADMIN_ID] = {"adim": "u_foto", "hid": hid}
+        adm[q.from_user.id] = {"adim": "u_foto", "hid": hid}
         await q.edit_message_text(f"'{ad}' kaydedildi!\n\nSimdi urun fotografini gonder:")
 
     elif d == "u_gramaj_kaydet":
@@ -1030,7 +1030,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         miktarlar = islem.get("miktarlar", {})
         havuz[hid] = {"ad": ad, "tip": tip, "miktarlar": miktarlar}
         kaydet(H_DOSYA, havuz)
-        if ADMIN_ID in adm: del adm[ADMIN_ID]
+        if ADMIN_ID in adm: del adm[q.from_user.id]
         mik_txt = "  ".join([f"{m}: {miktar_fiyat_str(f)}" for m, f in miktarlar.items()])
         await q.edit_message_text(f"'{ad}' [{tip_label(tip)}] eklendi!\n\n{mik_txt}")
 
@@ -1068,23 +1068,23 @@ async def ayarlar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = q.data
 
     if d == "ay_foto":
-        adm[ADMIN_ID] = {"adim": "giris_foto"}
+        adm[q.from_user.id] = {"adim": "giris_foto"}
         await q.edit_message_text("Giris icin gorsel gonder:")
 
     elif d == "ay_kanal":
-        adm[ADMIN_ID] = {"adim": "ay_kanal"}
+        adm[q.from_user.id] = {"adim": "ay_kanal"}
         await q.edit_message_text(
             f"Mevcut kanal linki:\n{ayarlar.get('kanal_link', '-')}\n\nYeni linki yaz:"
         )
 
     elif d == "ay_destek":
-        adm[ADMIN_ID] = {"adim": "ay_destek"}
+        adm[q.from_user.id] = {"adim": "ay_destek"}
         await q.edit_message_text(
             f"Mevcut destek linki:\n{ayarlar.get('destek_link', '-')}\n\nYeni linki yaz:"
         )
 
     elif d == "ay_kurallar":
-        adm[ADMIN_ID] = {"adim": "ay_kurallar"}
+        adm[q.from_user.id] = {"adim": "ay_kurallar"}
         await q.edit_message_text("Yeni market kurallarini yaz:")
 
     elif d == "ay_geri":
@@ -1109,10 +1109,10 @@ async def odeme_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     if q.data == "ody_iban":
-        adm[ADMIN_ID] = {"adim": "iban_guncelle"}
+        adm[q.from_user.id] = {"adim": "iban_guncelle"}
         await q.edit_message_text("Yeni IBAN bilgilerini yaz:")
     elif q.data == "ody_trc20":
-        adm[ADMIN_ID] = {"adim": "trc20_guncelle"}
+        adm[q.from_user.id] = {"adim": "trc20_guncelle"}
         await q.edit_message_text("Yeni TRC20 adresini yaz:")
 
 # ─── METİN ───────────────────────────────────────────────────────────────────
@@ -1357,7 +1357,7 @@ async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = q.data
 
     if d == "adm_ekle":
-        adm[ADMIN_ID] = {"adim": "adm_id_bekle"}
+        adm[q.from_user.id] = {"adim": "adm_id_bekle"}
         await q.edit_message_text(
             "Eklenecek adminin Telegram ID'sini yaz:\n\n"
             "Kullanici bota /id yazarsa ID'sini ogrenir."
