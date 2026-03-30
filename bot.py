@@ -1226,11 +1226,13 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif a["adim"] == "adm_ad_bekle":
             yeni_uid = a.get("yeni_uid")
+            # Adı adm dict'te sakla, callback'e koyma
+            adm[uid] = {"adim": "adm_sev_bekle", "yeni_uid": yeni_uid, "yeni_ad": txt}
             sev_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🟡 Yonetici", callback_data=f"adm_sev_yeni:{yeni_uid}:{txt}:yonetici")],
-                [InlineKeyboardButton("🟢 Saha",     callback_data=f"adm_sev_yeni:{yeni_uid}:{txt}:saha")],
+                [InlineKeyboardButton("🔴 Super Admin", callback_data="adm_sev_sec_super")],
+                [InlineKeyboardButton("🟡 Yonetici",    callback_data="adm_sev_sec_yonetici")],
+                [InlineKeyboardButton("🟢 Saha",        callback_data="adm_sev_sec_saha")],
             ])
-            del adm[uid]
             await update.message.reply_text(f"Ad: {txt}\nSeviyeyi sec:", reply_markup=sev_kb)
             return
 
@@ -1420,6 +1422,23 @@ async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Admin eklendi!\n\n{seviye_adi(int(uid2))}\n{ad2} (ID: {uid2})"
         )
 
+    elif d.startswith("adm_sev_sec_"):
+        sev = d.replace("adm_sev_sec_", "")
+        islem = adm.get(q.from_user.id, {})
+        yeni_uid = str(islem.get("yeni_uid", ""))
+        yeni_ad  = islem.get("yeni_ad", "?")
+        if yeni_uid:
+            adminler[yeni_uid] = {"seviye": sev, "ad": yeni_ad}
+            adminler_kaydet()
+            if q.from_user.id in adm:
+                del adm[q.from_user.id]
+            sev_goster = {"super": "🔴 Super Admin", "yonetici": "🟡 Yonetici", "saha": "🟢 Saha"}.get(sev, sev)
+            await q.edit_message_text(
+                f"Admin eklendi!\n\n{sev_goster}\n{yeni_ad} (ID: {yeni_uid})"
+            )
+        else:
+            await q.answer("Hata! Tekrar deneyin.", show_alert=True)
+
     elif d == "adm_geri":
         msg = "Admin Listesi\n─────────────────\n"
         for uid, a in adminler.items():
@@ -1539,6 +1558,7 @@ def main():
     app.add_handler(CommandHandler("ciro",        ciro_goster))
     app.add_handler(CommandHandler("id",          id_goster))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_"))
+    app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_sev_sec_"))
     app.add_handler(CommandHandler("iptal",       iptal))
 
     # Callback handlers - sıra önemli, önce özel pattern'ler
