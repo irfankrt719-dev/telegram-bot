@@ -303,13 +303,16 @@ async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data == "iptal":
         await edit("Iptal edildi.", None)
+        return
     if q.data == "giris_geri":
         await edit(giris_metni(q.from_user), giris_kb())
+        return
     il = q.data.split(":", 1)[1]
     context.user_data["il"] = il
     aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
     if not aktif_ilceler:
         await edit(f"{il} ilinde aktif bolge yok.", None)
+        return
     kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
@@ -522,6 +525,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if q.data == "iptal":
         await q.edit_message_text("Iptal edildi.")
+        return
     if q.data == "geri_odeme":
         il      = context.user_data["il"]
         ilce    = context.user_data["ilce"]
@@ -553,6 +557,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ Iptal",           callback_data="iptal")],
         ]
         await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        return
     if q.data == "onayla":
         no = context.user_data.get("no", "?")
         siparisler[no] = {
@@ -589,30 +594,32 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── DEKONT ──────────────────────────────────────────────────────────────────
 async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    if is_saha(uid):
-        if uid in adm and adm[uid].get("adim") == "giris_foto":
+    # Admin işlem modu kontrolü - sadece adm dict'te aktif işlem varsa admin olarak işle
+    if uid in adm:
+        if adm[uid].get("adim") == "giris_foto":
             ayarlar["giris_foto_id"] = update.message.photo[-1].file_id
             kaydet(A_DOSYA, ayarlar)
             del adm[uid]
             await update.message.reply_text("Giris gorseli ayarlandi!\n\n/start ile test edebilirsin.")
             return
-        if uid in adm and adm[uid].get("adim") == "u_foto":
+        if adm[uid].get("adim") == "u_foto":
             hid = adm[uid].get("hid")
             if hid and isinstance(havuz.get(hid), dict):
                 havuz[hid]["foto_id"] = update.message.photo[-1].file_id
                 kaydet(H_DOSYA, havuz)
                 del adm[uid]
-                await update.message.reply_text(f"✅ Urun gorseli kaydedildi!")
+                await update.message.reply_text("✅ Urun gorseli kaydedildi!")
             else:
                 await update.message.reply_text("Hata: urun bulunamadi.")
             return
-        if uid in adm and adm[uid].get("adim") == "foto":
+        if adm[uid].get("adim") == "foto":
             adm[uid]["foto_id"] = update.message.photo[-1].file_id
             adm[uid]["adim"]    = "konum"
             await update.message.reply_text("Fotograf kaydedildi!\n\nSimdi konumu gonder:")
             return
-        if is_super(uid):
-            await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
+    # Admin ama aktif işlem yoksa - foto ID ver (sadece süper admin)
+    if is_super(uid) and uid not in adm:
+        await update.message.reply_text(f"Fotograf ID:\n{update.message.photo[-1].file_id}")
         return
     # Beklemede olan siparişi bul
     no = context.user_data.get("no")
@@ -645,23 +652,31 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}"),
            InlineKeyboardButton(f"❌ Reddet — {no}", callback_data=f"ret:{no}")]]
-    await context.bot.send_photo(
-        chat_id=ADMIN_ID,
-        photo=update.message.photo[-1].file_id,
-        caption=(
-            f"Yeni Dekont!\nNo: {no}\n"
-            f"Il/Ilce: {s.get('il','?')}/{s.get('ilce','?')}\n"
-            f"Urun: {s.get('urun','?')}\n"
-            f"Fiyat: {fiyat_str(s.get('fiyat',0))}\n\nOnaylamak icin:"
-        ),
-        reply_markup=InlineKeyboardMarkup(kb)
+    caption = (
+        f"Yeni Dekont!\nNo: {no}\n"
+        f"Il/Ilce: {s.get('il','?')}/{s.get('ilce','?')}\n"
+        f"Urun: {s.get('urun','?')}\n"
+        f"Fiyat: {fiyat_str(s.get('fiyat',0))}\n\nOnaylamak icin:"
     )
+    # Süper admin hariç tüm adminlere gönder
+    for aid, a in adminler.items():
+        if a.get("seviye") == "super":
+            continue
+        try:
+            await context.bot.send_photo(
+                chat_id=int(aid),
+                photo=update.message.photo[-1].file_id,
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        except Exception as e:
+            logger.error(f"Admin {aid} e dekont gonderilemedi: {e}")
     await update.message.reply_text(f"Dekontunuz alindi! Siparis No: {no}")
 
 # ─── KONUM ───────────────────────────────────────────────────────────────────
 async def konum_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    if not is_yonetici(uid):
+    if not is_saha(uid):
         return
     if uid not in adm or adm[uid].get("adim") != "konum":
         await update.message.reply_text("Aktif konum ekleme islemi yok.")
@@ -685,7 +700,13 @@ async def konum_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── ADMİN CALLBACK ──────────────────────────────────────────────────────────
 async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if not is_saha(q.from_user.id):
+    uid = q.from_user.id
+    # onay ve ret sadece yönetici yapabilir (süper admin değil)
+    if q.data.startswith("onay:") or q.data.startswith("ret:"):
+        if not is_yonetici(uid) or is_super(uid):
+            await q.answer("Bu islem sadece Yonetici yapabilir!", show_alert=True)
+            return
+    elif not is_yonetici(uid):
         await q.answer("Yetkisiz!", show_alert=True)
         return
     await q.answer()
@@ -735,8 +756,8 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not s:
             await q.answer("Siparis bulunamadi!", show_alert=True)
             return
-        if s["durum"] in ("tamamlandi",):
-            await q.answer("Siparis zaten tamamlandi!", show_alert=True)
+        if s["durum"] in ("tamamlandi", "reddedildi", "isleniyor"):
+            await q.answer("Bu siparis zaten isleme alindi!", show_alert=True)
             return
         # Rezerveyi serbest bırak
         il   = s.get("il", "")
@@ -764,7 +785,17 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=red_kb
         )
-        await q.edit_message_caption(f"Reddedildi! {no}")
+        await q.edit_message_caption(f"❌ Reddedildi! {no}")
+        # Diğer non-super adminlere bildir
+        for aid, a in adminler.items():
+            if int(aid) != q.from_user.id and a.get("seviye") != "super":
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(aid),
+                        text=f"❌ {no} siparisi reddedildi."
+                    )
+                except:
+                    pass
 
     elif d.startswith("onay:"):
         no = d.split(":")[1]
@@ -772,8 +803,9 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not s:
             await q.edit_message_caption("Siparis bulunamadi.")
             return
-        if s["durum"] in ("isleniyor", "tamamlandi"):
-            await q.answer(f"Zaten {s['durum']}!", show_alert=True)
+        if s["durum"] in ("isleniyor", "tamamlandi", "reddedildi"):
+            durum_txt = {"isleniyor": "isleniyor", "tamamlandi": "onaylandi", "reddedildi": "reddedildi"}
+            await q.answer(f"Bu siparis zaten {durum_txt.get(s['durum'], s['durum'])}!", show_alert=True)
             return
         il = s["il"]; ilce = s["ilce"]
         # Önce bu siparişe rezerveli konumu bul
@@ -815,11 +847,21 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"%{INDIRIM_ORANI} indirim icin {yeni_k} siparisin kaldi!")
         kalan = ilce_konum_sayisi(il, ilce)
         uyari = f"\n\n{il}/{ilce}: {kalan} konum kaldi!" if kalan <= 3 else ""
-        await q.edit_message_caption(f"Tamamlandi! {no} — {yeni_t}. siparis{uyari}")
+        await q.edit_message_caption(f"✅ Tamamlandi! {no} — {yeni_t}. siparis{uyari}")
+        # Diğer non-super adminlere bildir
+        for aid, a in adminler.items():
+            if int(aid) != q.from_user.id and a.get("seviye") != "super":
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(aid),
+                        text=f"✅ {no} siparisi onaylandi."
+                    )
+                except:
+                    pass
 
 # ─── ADMİN: /konum_ekle ──────────────────────────────────────────────────────
 async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_yonetici(update.effective_user.id): return
+    if not is_saha(update.effective_user.id): return
     uid = update.effective_user.id
     if uid in adm: del adm[uid]
     iller = list(konumlar.keys())
@@ -829,7 +871,7 @@ async def konum_ekle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    if not is_yonetici(q.from_user.id):
+    if not is_saha(q.from_user.id):
         await q.answer("Yetkisiz!", show_alert=True); return
     await q.answer()
     d = q.data
@@ -1210,7 +1252,7 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── KOMUTLAR ────────────────────────────────────────────────────────────────
 async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_saha(update.effective_user.id): return
+    if not is_yonetici(update.effective_user.id): return
     if not konumlar:
         await update.message.reply_text("Hic konum yok.")
         return
