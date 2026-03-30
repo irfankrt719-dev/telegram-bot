@@ -754,6 +754,11 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_yonetici(uid) or is_super(uid):
             await q.answer("Bu islem sadece Yonetici yapabilir!", show_alert=True)
             return
+    # ks: ve ksg: (konum için ürün/gramaj seçimi) saha da yapabilir
+    elif q.data.startswith("ks:") or q.data.startswith("ksg:") or q.data.startswith("yeni_k:") or q.data == "tamam":
+        if not is_saha(uid):
+            await q.answer("Yetkisiz!", show_alert=True)
+            return
     elif not is_yonetici(uid):
         await q.answer("Yetkisiz!", show_alert=True)
         return
@@ -1652,6 +1657,35 @@ async def id_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     await update.message.reply_text(f"Telegram ID'niz: {uid}")
 
+
+# ─── YEDEKLeme ───────────────────────────────────────────────────────────────
+async def yedek_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_super(update.effective_user.id): return
+    dosyalar = [K_DOSYA, H_DOSYA, M_DOSYA, A_DOSYA, ADM_DOSYA, KOD_DOSYA, O_DOSYA, C_DOSYA]
+    isimler  = ["konumlar", "havuz", "musteriler", "ayarlar", "adminler", "kodlar", "odeme", "ciro"]
+    await update.message.reply_text("Yedek hazirlaniyor...")
+    for dosya, isim in zip(dosyalar, isimler):
+        if os.path.exists(dosya):
+            with open(dosya, "r", encoding="utf-8") as f:
+                icerik = f.read()
+            # Dosyayı gönder
+            import io
+            bio = io.BytesIO(icerik.encode("utf-8"))
+            bio.name = dosya
+            await context.bot.send_document(
+                chat_id=update.effective_user.id,
+                document=bio,
+                filename=dosya,
+                caption=f"📁 {isim}.json"
+            )
+        else:
+            await update.message.reply_text(f"{dosya} bulunamadi, atlanıyor.")
+    await update.message.reply_text(
+        "✅ Yedek tamamlandi!\n\n"
+        "Bu dosyaları GitHub reposuna yukle.\n"
+        "Sonraki deploy'da veriler korunacak."
+    )
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -1669,6 +1703,7 @@ def main():
     app.add_handler(CommandHandler("adminler",    adminler_menu))
     app.add_handler(CommandHandler("ciro",        ciro_goster))
     app.add_handler(CommandHandler("id",          id_goster))
+    app.add_handler(CommandHandler("yedek",       yedek_al))
     app.add_handler(CommandHandler("kod_olustur", kod_olustur))
     app.add_handler(CommandHandler("kodlar",      kodlar_listele))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_"))
