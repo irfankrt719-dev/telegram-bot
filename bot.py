@@ -13,6 +13,7 @@ ADMIN_ID  = int(os.environ.get("ADMIN_ID", "123456789"))
 
 # Admin dosyası
 ADM_DOSYA = "adminler.json"
+C_DOSYA   = "ciro.json"
 
 def adminler_yukle():
     if os.path.exists(ADM_DOSYA):
@@ -70,6 +71,7 @@ def kaydet(d, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 adminler        = adminler_yukle()
+ciro            = yukle(C_DOSYA, {"toplam_tl": 0, "toplam_usd": 0, "gunler": []})
 siparisler      = yukle(S_DOSYA, {})
 konumlar        = yukle(K_DOSYA, {})
 havuz           = yukle(H_DOSYA, HAVUZ_VARSAYILAN)
@@ -1257,6 +1259,39 @@ async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─── ADMİN YÖNETİMİ ──────────────────────────────────────────────────────────
+
+async def ciro_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_super(update.effective_user.id): return
+
+    # Aktif siparişlerden hesapla
+    aktif_tl = aktif_usd = 0.0
+    for no, s in siparisler.items():
+        if s.get("durum") == "tamamlandi":
+            f = float(s.get("fiyat", 0))
+            if s.get("odeme") == "odeme_iban":
+                aktif_tl += f
+            else:
+                aktif_usd += f
+
+    toplam_tl  = round(ciro.get("toplam_tl", 0) + aktif_tl, 2)
+    toplam_usd = round(ciro.get("toplam_usd", 0) + aktif_usd, 2)
+
+    msg  = f"💰 TOPLAM CİRO\n═══════════════\n\n"
+    msg += f"Tum Zamanlar:\n"
+    msg += f"  IBAN/TL  : {fiyat_str(toplam_tl)} TL\n"
+    msg += f"  TRC20    : {fiyat_str(toplam_usd)} USD\n\n"
+    msg += f"Bu Donem (Sifirlanmamis):\n"
+    msg += f"  IBAN/TL  : {fiyat_str(aktif_tl)} TL\n"
+    msg += f"  TRC20    : {fiyat_str(aktif_usd)} USD\n\n"
+
+    gunler = ciro.get("gunler", [])
+    if gunler:
+        msg += f"Gecmis Gun Sonlari:\n─────────────────\n"
+        for g in gunler[-10:]:  # Son 10 gün
+            msg += f"  {g['tarih']}: {fiyat_str(g['tl'])} TL / {fiyat_str(g['usd'])} USD\n"
+
+    await update.message.reply_text(msg)
+
 async def adminler_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_super(update.effective_user.id):
         await update.message.reply_text("Yetkisiz!")
@@ -1316,9 +1351,10 @@ async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid = d.split(":")[1]
         ad  = adminler.get(uid, {}).get("ad", "?")
         kb = [
-            [InlineKeyboardButton("🟡 Yonetici", callback_data=f"adm_sev_yap:{uid}:yonetici")],
-            [InlineKeyboardButton("🟢 Saha",     callback_data=f"adm_sev_yap:{uid}:saha")],
-            [InlineKeyboardButton("⬅️ Geri",     callback_data="adm_seviye_liste")],
+            [InlineKeyboardButton("🔴 Super Admin", callback_data=f"adm_sev_yap:{uid}:super")],
+            [InlineKeyboardButton("🟡 Yonetici",    callback_data=f"adm_sev_yap:{uid}:yonetici")],
+            [InlineKeyboardButton("🟢 Saha",        callback_data=f"adm_sev_yap:{uid}:saha")],
+            [InlineKeyboardButton("⬅️ Geri",        callback_data="adm_seviye_liste")],
         ]
         await q.edit_message_text(f"{ad} icin yeni seviye sec:", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -1402,8 +1438,35 @@ async def gunsonu_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
               [InlineKeyboardButton("❌ Iptal", callback_data="gunsonu_iptal")]]
         await q.edit_message_text("Emin misin?\n\nTum siparisler silinecek.", reply_markup=InlineKeyboardMarkup(kb))
     elif q.data == "gunsonu_evet":
-        siparisler.clear(); kaydet(S_DOSYA, siparisler)
-        await q.edit_message_text(f"Siparisler sifirland! {time.strftime('%d.%m.%Y %H:%M')}")
+        # Sıfırlamadan önce ciroya ekle
+        gun_tl = 0.0
+        gun_usd = 0.0
+        for no, s in siparisler.items():
+            if s.get("durum") == "tamamlandi":
+                f = float(s.get("fiyat", 0))
+                if s.get("odeme") == "odeme_iban":
+                    gun_tl += f
+                else:
+                    gun_usd += f
+        ciro["toplam_tl"]  = round(ciro.get("toplam_tl", 0) + gun_tl, 2)
+        ciro["toplam_usd"] = round(ciro.get("toplam_usd", 0) + gun_usd, 2)
+        ciro.setdefault("gunler", []).append({
+            "tarih": time.strftime("%d.%m.%Y"),
+            "tl":    gun_tl,
+            "usd":   gun_usd
+        })
+        kaydet(C_DOSYA, ciro)
+        siparisler.clear()
+        kaydet(S_DOSYA, siparisler)
+        await q.edit_message_text(
+            f"Siparisler sifirland! {time.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Bu gun eklendi:\n"
+            f"  IBAN: {fiyat_str(gun_tl)} TL\n"
+            f"  TRC20: {fiyat_str(gun_usd)} USD\n\n"
+            f"Toplam ciro:\n"
+            f"  IBAN: {fiyat_str(ciro['toplam_tl'])} TL\n"
+            f"  TRC20: {fiyat_str(ciro['toplam_usd'])} USD"
+        )
     elif q.data == "gunsonu_iptal":
         await q.edit_message_text("Iptal edildi.")
 
@@ -1431,6 +1494,7 @@ def main():
     app.add_handler(CommandHandler("musteriler",  musteriler_goster))
     app.add_handler(CommandHandler("ayarlar",     ayarlar_menu))
     app.add_handler(CommandHandler("adminler",    adminler_menu))
+    app.add_handler(CommandHandler("ciro",        ciro_goster))
     app.add_handler(CommandHandler("id",          id_goster))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_"))
     app.add_handler(CommandHandler("iptal",       iptal))
