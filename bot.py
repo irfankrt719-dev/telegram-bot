@@ -960,7 +960,7 @@ async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d.startswith("ke_il:"):
         il = d.split(":", 1)[1]
         ilceler = list(konumlar.get(il, {}).keys())
-        kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{il}:{ilce}")] for ilce in ilçeler]
+        kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{il}:{ilce}")] for ilce in ilceler]
         kb.append([InlineKeyboardButton("➕ Yeni İlçe", callback_data=f"ke_yeni_ilçe:{il}")])
         await q.edit_message_text(f"Il: {il}\n\nİlçe seç:", reply_markup=InlineKeyboardMarkup(kb))
     elif d.startswith("ke_yeni_ilçe:"):
@@ -1230,14 +1230,14 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if a["adim"] == "yeni_il":
             if txt not in konumlar: konumlar[txt] = {}; kaydet(K_DOSYA, konumlar)
             # adm'ı silme, ilce seçimine yönlendir
-            adm[uid] = {"adim": "il_seçildi", "il": txt}
+            adm[uid] = {"adim": "il_secildi", "il": txt}
             ilceler = list(konumlar.get(txt, {}).keys())
-            kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{txt}:{ilce}")] for ilce in ilçeler]
-            kb.append([InlineKeyboardButton("➕ Yeni İlçe", callback_data=f"ke_yeni_ilçe:{txt}")])
+            kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{txt}:{ilce}")] for ilce in ilceler]
+            kb.append([InlineKeyboardButton("➕ Yeni Ilce", callback_data=f"ke_yeni_ilce:{txt}")])
             await update.message.reply_text(f"'{txt}' eklendi!\n\nİlçe seç:", reply_markup=InlineKeyboardMarkup(kb))
             return
 
-        elif a["adim"] == "yeni_ilçe":
+        elif a["adim"] == "yeni_ilce":
             il = a["il"]
             if il not in konumlar: konumlar[il] = {}
             if txt not in konumlar[il]: konumlar[il][txt] = []; kaydet(K_DOSYA, konumlar)
@@ -1477,7 +1477,7 @@ async def kodlar_listele(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if bos:
         msg += "Kullanılabilir Kodlar:\n"
         msg += "\n".join([f"• {k}" for k in bos[:30]])
-        if len(boş) > 30:
+        if len(bos) > 30:
             msg += f"\n... ve {len(boş)-30} tane daha"
     await update.message.reply_text(msg)
 
@@ -1600,19 +1600,19 @@ async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     toplam = tamamlanan = bekleyen = 0
     gelir_tl = gelir_usd = 0.0
     iban_adet = trc20_adet = 0
-    ürün_sayac = {}
+    urun_sayac = {}
     for no, s in siparisler.items():
         toplam += 1
         if s["durum"] == "tamamlandı":
             tamamlanan += 1
             f = float(s.get("fiyat", 0))
-            ödeme = s.get("odeme", "")
-            if ödeme == "odeme_iban":
+            odeme = s.get("odeme", "")
+            if odeme == "odeme_iban":
                 gelir_tl += f; iban_adet += 1
             else:
                 gelir_usd += f; trc20_adet += 1
             u = s.get("urun", "?")
-            ürün_sayac[u] = ürün_sayac.get(u, 0) + 1
+            urun_sayac[u] = urun_sayac.get(u, 0) + 1
         elif s["durum"] == "beklemede":
             bekleyen += 1
     toplam_k = kalan_k = kullanilan_k = 0
@@ -1629,7 +1629,7 @@ async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rapor  = f"📊 GÜN SONU — {time.strftime('%d.%m.%Y %H:%M')}\n═══════════════\n\n"
     rapor += f"📦 Sipariş: {toplam} toplam | {tamamlanan} tamamlandı | {bekleyen} bekliyor\n\n"
     rapor += f"💰 Gelir:\n  IBAN: {fiyat_str(gelir_tl)} TL ({iban_adet})\n  TRC20: {fiyat_str(gelir_usd)} USD ({trc20_adet})\n\n"
-    rapor += "🍬 Satislar:\n" + "\n".join([f"  {u}: {a}" for u, a in ürün_sayac.items()]) + "\n\n" if ürün_sayac else "🍬 Satis yok\n\n"
+    rapor += "🍬 Satislar:\n" + "\n".join([f"  {u}: {a}" for u, a in urun_sayac.items()]) + "\n\n" if urun_sayac else "🍬 Satis yok\n\n"
     rapor += f"📍 Konum: {kalan_k} kalan / {kullanilan_k} kullanıldı\n" + "\n".join(k_satirlar)
     kb = [[InlineKeyboardButton("🗑 Siparişleri Sıfırla", callback_data="gunsonu_sifirla")]]
     await update.message.reply_text(rapor, reply_markup=InlineKeyboardMarkup(kb))
