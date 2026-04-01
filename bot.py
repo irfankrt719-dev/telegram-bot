@@ -1799,7 +1799,19 @@ async def rezerve_kontrol(context):
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    import asyncio
+
+    async def post_init(application):
+        async def rezerve_loop():
+            while True:
+                await asyncio.sleep(60)
+                try:
+                    await rezerve_kontrol_async(application.bot)
+                except Exception as e:
+                    logger.error(f"Rezerve kontrol hatasi: {e}")
+        asyncio.create_task(rezerve_loop())
+
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
 
     # Komutlar
     app.add_handler(CommandHandler("start",       start))
