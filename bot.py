@@ -997,7 +997,7 @@ async def goster_havuz(hedef):
     else:
         await hedef.edit_message_text(msg, reply_markup=markup)
 
-async def ürünler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def urunler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_yonetici(update.effective_user.id): return
     uid = update.effective_user.id
     if uid in adm: del adm[uid]  # Önceki yarım işlemi temizle
@@ -1380,7 +1380,7 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += "\n\nAktif konum yok."
             await update.message.reply_text(msg)
 
-async def siparişler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_yonetici(update.effective_user.id): return
     if not siparişler:
         await update.message.reply_text("Henuz sipariş yok.")
@@ -1441,7 +1441,7 @@ async def ciro_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
-async def kod_oluştur(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def kod_olustur(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_super(update.effective_user.id):
         await update.message.reply_text("Yetkisiz!")
         return
@@ -1803,10 +1803,10 @@ def main():
 
     # Komutlar
     app.add_handler(CommandHandler("start",       start))
-    app.add_handler(CommandHandler("siparişler",  siparişler_goster))
+    app.add_handler(CommandHandler("siparisler",  siparisler_goster))
     app.add_handler(CommandHandler("konumlar",    konumlar_goster))
     app.add_handler(CommandHandler("konum_ekle",  konum_ekle))
-    app.add_handler(CommandHandler("ürünler",     ürünler_goster))
+    app.add_handler(CommandHandler("urunler",     urunler_goster))
     app.add_handler(CommandHandler("odeme",       odeme_yonetim))
     app.add_handler(CommandHandler("gunsonu",     gunsonu))
     app.add_handler(CommandHandler("musteriler",  musteriler_goster))
@@ -1818,7 +1818,7 @@ def main():
     app.add_handler(CommandHandler("on",          bot_on))
     app.add_handler(CommandHandler("off",         bot_off))
     app.add_handler(CommandHandler("durum",       bot_durum))
-    app.add_handler(CommandHandler("kod_oluştur", kod_oluştur))
+    app.add_handler(CommandHandler("kod_olustur", kod_olustur))
     app.add_handler(CommandHandler("kodlar",      kodlar_listele))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_"))
     app.add_handler(CallbackQueryHandler(adminler_cb, pattern=r"^adm_sev_seç_"))
