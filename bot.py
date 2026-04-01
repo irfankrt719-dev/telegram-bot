@@ -1,5 +1,5 @@
 """
-Telegram Sipariş Botu - Temiz Versiyon
+Telegram Siparis Botu - Temiz Versiyon
 """
 import logging, json, os, time, random, string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -766,10 +766,10 @@ async def konum_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
-    # onay ve ret sadece yönetici yapabilir (süper admin değil)
+    # onay ve ret: yönetici ve süper admin yapabilir
     if q.data.startswith("onay:") or q.data.startswith("ret:"):
-        if not is_yonetici(uid) or is_super(uid):
-            await q.answer("Bu işlemi sadece Yönetici yapabilir!", show_alert=True)
+        if not is_yonetici(uid):
+            await q.answer("Yetkisiz!", show_alert=True)
             return
     # ks: ve ksg: (konum için ürün/gramaj seçimi) saha da yapabilir
     elif q.data.startswith("ks:") or q.data.startswith("ksg:") or q.data.startswith("yeni_k:") or q.data == "tamam":
@@ -1568,7 +1568,7 @@ async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif d.startswith("adm_sev_sec_"):
-        sev = d.replace("adm_sev_seç_", "")
+        sev = d.replace("adm_sev_sec_", "")
         islem = adm.get(q.from_user.id, {})
         yeni_uid = str(islem.get("yeni_uid", ""))
         yeni_ad  = islem.get("yeni_ad", "?")
