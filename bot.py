@@ -1742,60 +1742,6 @@ async def bot_durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── OTOMATİK İPTAL ──────────────────────────────────────────────────────────
 REZERVE_SURE = 10 * 60  # 10 dakika saniye cinsinden
 
-async def rezerve_kontrol(context):
-    """Her dakika çalışır, süresi dolan rezerveleri iptal eder"""
-    şimdi = time.time()
-    iptal_edilecek = []
-
-    for no, s in siparişler.items():
-        if s.get("durum") != "beklemede":
-            continue
-        rezerve_zaman = s.get("rezerve_zaman")
-        if not rezerve_zaman:
-            continue
-        gecen = şimdi - rezerve_zaman
-        if gecen >= REZERVE_SURE:
-            iptal_edilecek.append(no)
-
-    for no in iptal_edilecek:
-        s  = siparişler.get(no, {})
-        il   = s.get("il", "")
-        ilçe = s.get("ilçe", "")
-        mid  = s.get("user_id")
-
-        # Rezerveyi serbest bırak
-        for km in konumlar.get(il, {}).get(ilçe, []):
-            if km.get("rezerve_no") == no:
-                km["rezerve"] = False
-                km.pop("rezerve_no", None)
-                break
-        kaydet(K_DOSYA, konumlar)
-
-        # Siparişi iptal et
-        siparişler[no]["durum"] = "iptal"
-        kaydet(S_DOSYA, siparişler)
-
-        # Müşteriye bildirim
-        if mid:
-            try:
-                red_kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🛒 Tekrar Sipariş Ver", callback_data="giriş_alisveris")],
-                    [InlineKeyboardButton("🆘 Destek", url=ayarlar.get("destek_link", "https://t.me/destekkullanıcı"))],
-                ])
-                await context.bot.send_message(
-                    chat_id=mid,
-                    text=(
-                        f"⏰ Siparişıniz otomatik iptal edildi.\n\n"
-                        f"Sipariş No: {no}\n"
-                        f"Sebep: 10 dakika icinde dekont gönderilmedi.\n\n"
-                        f"Tekrar sipariş vermek icin asagidaki butona basin."
-                    ),
-                    reply_markup=red_kb
-                )
-            except Exception as e:
-                logger.error(f"İptal bildirimi gönderilemedi: {e}")
-
-        logger.info(f"Sipariş {no} otomatik iptal edildi.")
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
@@ -1858,8 +1804,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, metin))
 
     # Her 60 saniyede bir rezerve kontrolü yap
-    app.job_queue.run_repeating(rezerve_kontrol, interval=60, first=60)
-
     logger.info("Bot başladi. Rezerve kontrolu aktif (10 dk).")
     app.run_polling()
 
