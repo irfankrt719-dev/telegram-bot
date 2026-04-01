@@ -1,0 +1,4 @@
+{
+  "iban": "Ödeme Yontemi: IBAN / Havale\n─────────────────\nBanka: Ziraat Bankasi\nHesap Adi: Sirket Adi\nIBAN: TR00 0000 0000 0000 0000 0000 00\n\nAçıklama kismina sipariş numaranizi yazin!",
+  "trc20": "Ödeme Yontemi: TRC20 (USDT)\n─────────────────\nAdres: BURAYA_TRC20_ADRESINIZI_YAZIN\n\nGöndermeden önce adresi kontrol edin!"
+}
