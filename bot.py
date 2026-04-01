@@ -788,7 +788,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u    = havuz.get(hid, {})
         ad   = u.get("ad", "?")
         mik  = u.get("miktarlar", {})
-        adm[q.from_user.id] = {"adim": "gramaj_seç", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad, "hid": hid}
+        adm[q.from_user.id] = {"adim": "gramaj_sec", "il": il, "ilce": ilce, "kidx": kidx, "urun_ad": ad, "hid": hid}
         kb   = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"ksg:{hid}:{g}:{il}:{ilce}:{kidx}")]
                 for g, f in mik.items()]
         await q.edit_message_text(f"Ürün: {ad}\n\nGramaji seç:", reply_markup=InlineKeyboardMarkup(kb))
@@ -961,13 +961,13 @@ async def ke_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         il = d.split(":", 1)[1]
         ilceler = list(konumlar.get(il, {}).keys())
         kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ke_ilce:{il}:{ilce}")] for ilce in ilceler]
-        kb.append([InlineKeyboardButton("➕ Yeni İlçe", callback_data=f"ke_yeni_ilçe:{il}")])
+        kb.append([InlineKeyboardButton("➕ Yeni İlçe", callback_data=f"ke_yeni_ilce:{il}")])
         await q.edit_message_text(f"Il: {il}\n\nİlçe seç:", reply_markup=InlineKeyboardMarkup(kb))
-    elif d.startswith("ke_yeni_ilçe:"):
+    elif d.startswith("ke_yeni_ilce:"):
         il = d.split(":", 1)[1]
-        adm[q.from_user.id] = {"adim": "yeni_ilçe", "il": il}
+        adm[q.from_user.id] = {"adim": "yeni_ilce", "il": il}
         await q.edit_message_text(f"{il} icin ilce adini yaz:")
-    elif d.startswith("ke_ilçe:"):
+    elif d.startswith("ke_ilce:"):
         p = d.split(":"); il = p[1]; ilce = p[2]
         adm[q.from_user.id] = {"adim": "foto", "il": il, "ilce": ilce}
         await q.edit_message_text(f"{il}/{ilce}\n\nFotoğrafi gönder:")
