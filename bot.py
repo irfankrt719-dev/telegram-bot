@@ -398,7 +398,7 @@ async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     urunler = ilce_urunler(il, ilce)
     if not urunler:
         await q.edit_message_text(f"{ilce} bölgesinde ürün bulunamadı.")
-    kb = [[InlineKeyboardButton(ad, callback_data=f"ürün:{ad}")] for ad in urunler.keys()]
+    kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
     kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
     await q.edit_message_text(f"Il: {il}  |  Bölge: {ilce}\n\nÜrün seçin:", reply_markup=InlineKeyboardMarkup(kb))
@@ -435,9 +435,9 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         il   = context.user_data["il"]
         ilce = context.user_data["ilce"]
         urunler = ilce_urunler(il, ilce)
-        kb = [[InlineKeyboardButton(ad, callback_data=f"ürün:{ad}")] for ad in urunler.keys()]
+        kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
-        kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         await q.edit_message_text("Ürün seçin:", reply_markup=InlineKeyboardMarkup(kb))
     gram  = q.data.split(":", 1)[1]
     il    = context.user_data["il"]
@@ -661,7 +661,7 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     # Admin işlem modu kontrolü - sadece adm dict'te aktif işlem varsa admin olarak işle
     if uid in adm:
-        if adm[uid].get("adim") == "giriş_foto":
+        if adm[uid].get("adim") == "giris_foto":
             ayarlar["giriş_foto_id"] = update.message.photo[-1].file_id
             kaydet(A_DOSYA, ayarlar)
             del adm[uid]
@@ -1149,7 +1149,7 @@ async def ayarlar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = q.data
 
     if d == "ay_foto":
-        adm[q.from_user.id] = {"adim": "giriş_foto"}
+        adm[q.from_user.id] = {"adim": "giris_foto"}
         await q.edit_message_text("Giriş icin görsel gönder:")
 
     elif d == "ay_kanal":
@@ -1531,7 +1531,7 @@ async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not silinebilir:
             await q.answer("Değiştirilecek admin yok!", show_alert=True)
             return
-        kb = [[InlineKeyboardButton(f"{seviye_adi(int(uid))} — {a.get('ad','?')}", callback_data=f"adm_sev_seç:{uid}")]
+        kb = [[InlineKeyboardButton(f"{seviye_adi(int(uid))} — {a.get('ad','?')}", callback_data=f"adm_sev_sec:{uid}")]
               for uid, a in silinebilir.items()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="adm_geri")])
         await q.edit_message_text("Kimin seviyesini değiştirmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
