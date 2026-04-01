@@ -1368,7 +1368,7 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
             e   = "🟢" if kalan > 3 else ("🟡" if kalan > 0 else "🔴")
             rezerveli = sum(1 for k in liste if k.get("rezerve") and not k.get("silindi"))
             bos       = kalan - rezerveli
-            msg = f"{e} {il}/{ilce} — {boş} boş / {rezerveli} rezerveli / {len(liste)} toplam\n─────────────────"
+            msg = f"{e} {il}/{ilce} — {bos} boş / {rezerveli} rezerveli / {len(liste)} toplam\n─────────────────"
             n   = 0
             for k in liste:
                 if k.get("silindi"): continue
@@ -1385,7 +1385,7 @@ async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not siparisler:
         await update.message.reply_text("Henuz sipariş yok.")
         return
-    e   = {"beklemede": "⏳", "işleniyor": "🔄", "tamamlandı": "✅"}
+    e   = {"beklemede": "⏳", "isleniyor": "🔄", "tamamlandi": "✅"}
     msg = "Siparişler\n─────────────────\n"
     for no, s in siparisler.items():
         msg += f"\n{e.get(s['durum'],'?')} {no}\n  {s.get('il','')}/{s.get('ilce','')} | {s['urun']} | {fiyat_str(s['fiyat'])}\n"
@@ -1473,12 +1473,12 @@ async def kodlar_listele(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bos    = [k for k, v in kodlar.items() if not v.get("kullanildi")]
     dolu   = [k for k, v in kodlar.items() if v.get("kullanildi")]
     msg    = f"Referans Kodları\n─────────────────\n"
-    msg   += f"Boş: {len(boş)} | Kullanılmış: {len(dolu)}\n\n"
+    msg   += f"Boş: {len(bos)} | Kullanılmış: {len(dolu)}\n\n"
     if bos:
         msg += "Kullanılabilir Kodlar:\n"
         msg += "\n".join([f"• {k}" for k in bos[:30]])
         if len(bos) > 30:
-            msg += f"\n... ve {len(boş)-30} tane daha"
+            msg += f"\n... ve {len(bos)-30} tane daha"
     await update.message.reply_text(msg)
 
 async def adminler_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
