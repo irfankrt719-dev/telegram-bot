@@ -662,7 +662,7 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Admin işlem modu kontrolü - sadece adm dict'te aktif işlem varsa admin olarak işle
     if uid in adm:
         if adm[uid].get("adim") == "giris_foto":
-            ayarlar["giriş_foto_id"] = update.message.photo[-1].file_id
+            ayarlar["giris_foto_id"] = update.message.photo[-1].file_id
             kaydet(A_DOSYA, ayarlar)
             del adm[uid]
             await update.message.reply_text("Giriş görseli ayarlandi!\n\n/start ile test edebilirsin.")
@@ -1536,7 +1536,7 @@ async def adminler_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="adm_geri")])
         await q.edit_message_text("Kimin seviyesini değiştirmek istiyorsun?", reply_markup=InlineKeyboardMarkup(kb))
 
-    elif d.startswith("adm_sev_seç:"):
+    elif d.startswith("adm_sev_sec:"):
         uid = d.split(":")[1]
         ad  = adminler.get(uid, {}).get("ad", "?")
         kb = [
