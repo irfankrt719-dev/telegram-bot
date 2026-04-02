@@ -603,16 +603,19 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.edit_message_text(txt, reply_markup=kb)
 
     if q.data == "iptal":
-        await q.edit_message_text("İptal edildi.")
+        try:
+            await q.edit_message_text("Iptal edildi.")
+        except:
+            await q.message.chat.send_message("Iptal edildi.")
         return
     if q.data == "geri_odeme":
-        il      = context.user_data["il"]
-        ilce    = context.user_data["ilce"]
-        urun_ad = context.user_data["urun_ad"]
-        gram    = context.user_data["gram"]
-        tl_f    = context.user_data["fiyat_tl"]
-        usd_f   = context.user_data["fiyat_usd"]
-        no      = context.user_data["no"]
+        il      = context.user_data.get("il", "")
+        ilce    = context.user_data.get("ilce", "")
+        urun_ad = context.user_data.get("urun_ad", "")
+        gram    = context.user_data.get("gram", "")
+        tl_f    = context.user_data.get("fiyat_tl", 0)
+        usd_f   = context.user_data.get("fiyat_usd", 0)
+        no      = context.user_data.get("no", "")
         uid     = q.from_user.id
         kalan   = musteri_kalan(uid)
         aktif   = musteri_indirim_var_mi(uid)
@@ -851,7 +854,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not s:
             await q.answer("Sipariş bulunamadı!", show_alert=True)
             return
-        if s["durum"] in ("tamamlandı", "reddedildi", "işleniyor"):
+        if s["durum"] in ("tamamlandi", "reddedildi", "isleniyor"):
             await q.answer("Bu sipariş zaten isleme alındı!", show_alert=True)
             return
         # Rezerveyi serbest bırak
@@ -1853,7 +1856,7 @@ def main():
     app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme_sec)"))
     app.add_handler(CallbackQueryHandler(odeme,     pattern=r"^(onayla|geri_odeme|iptal)"))
 
-    app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:|ret:)"))
+    app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:|ret:|konum_ekle_menu$)"))
     app.add_handler(CallbackQueryHandler(ke_cb,      pattern=r"^ke_"))
     app.add_handler(CallbackQueryHandler(urun_cb,    pattern=r"^u_"))
     app.add_handler(CallbackQueryHandler(odeme_cb,   pattern=r"^ody_"))
