@@ -638,7 +638,14 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_ilce")],
             [InlineKeyboardButton("❌ İptal",           callback_data="iptal")],
         ]
-        await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        try:
+            await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        except:
+            try:
+                await q.message.delete()
+            except:
+                pass
+            await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
         return
     if q.data == "onayla":
         no = context.user_data.get("no", "?")
@@ -723,6 +730,15 @@ async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     s = siparisler[no]
+
+    # TRC20 siparişi için fotoğraf değil TxID bekleniyor
+    if s.get("odeme") == "odeme_trc20":
+        await update.message.reply_text(
+            "TRC20 ödemesi için fotoğraf değil,\n"
+            "TX ID (işlem kodu) göndermeniz gerekiyor.\n\n"
+            "Lütfen sadece TX ID kodunu yazın."
+        )
+        return
 
     # İki fotoğraf gelirse sadece müşteriye bilgi ver, admine tekrar gönderme
     if s.get("dekont_gonderildi"):
@@ -1220,6 +1236,46 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid  = update.effective_user.id
     txt  = update.message.text.strip()
     user = update.effective_user
+
+    # TRC20 TX ID bekleniyor
+    if not is_saha(uid):
+        no = context.user_data.get("no")
+        if not no:
+            for n, s in siparisler.items():
+                if str(s["user_id"]) == str(uid) and s["durum"] == "beklemede":
+                    no = n
+                    break
+        if no and no in siparisler:
+            s = siparisler[no]
+            if s.get("odeme") == "odeme_trc20" and not s.get("dekont_gonderildi"):
+                txid = txt.strip()
+                if len(txid) > 10:  # Geçerli bir TxID uzunluğu
+                    siparisler[no]["dekont_gonderildi"] = True
+                    siparisler[no]["txid"] = txid
+                    kaydet(S_DOSYA, siparisler)
+                    kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}"),
+                           InlineKeyboardButton(f"❌ Reddet — {no}", callback_data=f"ret:{no}")]]
+                    for aid, a in adminler.items():
+                        if a.get("seviye") != "super":
+                            try:
+                                await context.bot.send_message(
+                                    chat_id=int(aid),
+                                    text=(
+                                        f"💎 Yeni TRC20 TX ID!\nNo: {no}\n"
+                                        f"Il/Ilce: {s.get('il','?')}/{s.get('ilce','?')}\n"
+                                        f"Urun: {s.get('urun','?')}\n"
+                                        f"Fiyat: {fiyat_str(s.get('fiyat',0))} USD\n\n"
+                                        f"TX ID: {txid}\n\nOnaylamak icin:"
+                                    ),
+                                    reply_markup=InlineKeyboardMarkup(kb)
+                                )
+                            except Exception as e:
+                                logger.error(f"TxID bildirimi gonderilemedi: {e}")
+                    await update.message.reply_text(f"TX ID alındı! Sipariş No: {no}\n\nAdmin onayı bekleniyor.")
+                    return
+                else:
+                    await update.message.reply_text("Geçersiz TX ID. Lütfen doğru kodu girin.")
+                    return
 
     # Referans kodu bekleniyor
     if context.user_data.get("bekleyen_kod") and not is_saha(uid):
