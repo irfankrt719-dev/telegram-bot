@@ -222,7 +222,6 @@ def giris_kb():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Alışverişe Başla",  callback_data="giris_alisveris")],
         [InlineKeyboardButton("📋 Market Kuralları",   callback_data="giris_kurallar")],
-        [InlineKeyboardButton("📢 Kanalımız",          url=ayarlar.get("kanal_link", "https://t.me/kanaliniz"))],
         [InlineKeyboardButton("🆘 Destek",             url=ayarlar.get("destek_link", "https://t.me/destekkullanici"))],
     ])
 
@@ -493,11 +492,21 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.delete()
         except:
             pass
-        await q.message.chat.send_photo(
-            photo=urun_foto,
-            caption=ozet,
-            reply_markup=InlineKeyboardMarkup(kb)
-        )
+        try:
+            await q.message.chat.send_photo(
+                photo=urun_foto,
+                caption=ozet,
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        except Exception as e:
+            logger.error(f"Urun foto hatasi: {e}")
+            # Foto gecersizse temizle ve textle gonder
+            for hid, hu in havuz.items():
+                if isinstance(hu, dict) and hu.get("foto_id") == urun_foto:
+                    hu["foto_id"] = ""
+                    kaydet(H_DOSYA, havuz)
+                    break
+            await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
     else:
         await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
 
@@ -571,10 +580,17 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ İptal",            callback_data="iptal")],
         ]
         try:
-            await q.message.delete()
-        except:
-            pass
-        await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
+            if q.message.photo:
+                await q.edit_message_caption(caption=ozet, reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        except Exception as e:
+            logger.error(f"odeme_sec edit hatasi: {e}")
+            try:
+                await q.message.delete()
+            except:
+                pass
+            await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
 
 async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
