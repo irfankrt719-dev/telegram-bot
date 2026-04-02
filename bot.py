@@ -677,12 +677,12 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kaydet(K_DOSYA, konumlar)
         siparisler[no]["rezerve_zaman"] = time.time()
         kaydet(S_DOSYA, siparisler)
-        yontem = "Havale/EFT" if context.user_data.get("odeme_yontemi") == "odeme_iban" else "TRC20 (USDT)"
+        odeme_turu = siparisler[no].get("odeme", "")
+        yontem  = "Havale/EFT" if odeme_turu == "odeme_iban" else "TRC20 (USDT)"
+        talimat = "Dekont fotografini gonderin." if odeme_turu == "odeme_iban" else "TX ID (islem kodu) yazin."
         await edit(
-            f"Siparişıniz alındı!\n\nSipariş No: {no}\nÖdeme: {yontem}\n\n"
-            f"Dekontu gönderin. (10 dakika icinde gönderin!)"
+            f"Siparişiniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\n{talimat}\n(10 dakika icinde gonderin!)"
         )
-
 # ─── DEKONT ──────────────────────────────────────────────────────────────────
 async def foto_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
