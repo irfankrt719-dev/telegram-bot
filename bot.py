@@ -565,6 +565,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bilgi   = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
         fiyat_goster = f"{fiyat_str(tl_f)} TL" if q.data == "odeme_iban" else f"{fiyat_str(usd_f)} USD"
         context.user_data["fiyat"] = tl_f if q.data == "odeme_iban" else usd_f
+        talimat = "Ödemeyi yaptiktan sonra dekont fotoğrafini gönderin." if q.data == "odeme_iban" else "Ödemeyi yaptiktan sonra TX ID (işlem kodu) yazin."
         ozet = (
             f"Sipariş Ozeti\n─────────────────\n"
             f"Sipariş No : {no}\n"
@@ -572,7 +573,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Fiyat      : {fiyat_goster}\n"
             f"─────────────────\n\n"
             f"{bilgi}\n\n"
-            f"Ödemeyi yaptiktan sonra dekont fotoğrafini gönderin."
+            f"{talimat}"
         )
         kb = [
             [InlineKeyboardButton("✅ Siparişi Onayla", callback_data="onayla")],
