@@ -1274,8 +1274,9 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 logger.error(f"TxID bildirimi gonderilemedi: {e}")
                     await update.message.reply_text(f"TX ID alındı! Sipariş No: {no}\n\nAdmin onayı bekleniyor.")
                     return
+                    return
                 else:
-                    await update.message.reply_text("Geçersiz TX ID. Lütfen doğru kodu girin.")
+                    await update.message.reply_text("Geçersiz TX ID. Lütfen doğru TX ID kodunu yazın (min 10 karakter).")
                     return
 
     # Referans kodu bekleniyor
