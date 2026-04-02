@@ -659,7 +659,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "urun_ad":    context.user_data["urun_ad"],
             "gram":       context.user_data["gram"],
             "fiyat":      context.user_data["fiyat"],
-            "ödeme":      context.user_data.get("odeme_yontemi", ""),
+            "odeme":      context.user_data.get("odeme_yontemi", ""),
             "durum":      "beklemede"
         }
         # Konumu rezerve et
