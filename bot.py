@@ -552,10 +552,20 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if q.data == "geri_odeme_sec":
-        # Gram seçim ekranına dön (fotosuz)
+        # Gram seçim ekranına dön - önce context'ten, yoksa siparişten oku
         il      = context.user_data.get("il", "")
         ilce    = context.user_data.get("ilce", "")
         urun_ad = context.user_data.get("urun_ad", "")
+        if not il or not urun_ad:
+            for n, s in siparisler.items():
+                if str(s.get("user_id")) == str(q.from_user.id) and s.get("durum") == "beklemede":
+                    il      = s.get("il", "")
+                    ilce    = s.get("ilce", "")
+                    urun_ad = s.get("urun_ad", "")
+                    context.user_data["il"]      = il
+                    context.user_data["ilce"]    = ilce
+                    context.user_data["urun_ad"] = urun_ad
+                    break
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
         kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
