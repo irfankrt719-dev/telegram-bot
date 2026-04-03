@@ -392,23 +392,26 @@ async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
-        await q.edit_message_text("İptal edildi.")
+        await q.edit_message_text("Iptal edildi.")
+        return
     if q.data == "geri_il":
         aktif = [il for il, ilceler in konumlar.items() if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
         kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
-        kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
-        await q.edit_message_text("Il seçin:", reply_markup=InlineKeyboardMarkup(kb))
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Il secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return
     ilce = q.data.split(":", 1)[1]
     il   = context.user_data["il"]
     context.user_data["ilce"] = ilce
     urunler = ilce_urunler(il, ilce)
     if not urunler:
-        await q.edit_message_text(f"{ilce} bölgesinde ürün bulunamadı.")
+        await q.edit_message_text(f"{ilce} bolgesinde urun bulunamadi.")
+        return
     kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
-    kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
-    await q.edit_message_text(f"Il: {il}  |  Bölge: {ilce}\n\nÜrün seçin:", reply_markup=InlineKeyboardMarkup(kb))
+    kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+    await q.edit_message_text(f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(kb))
 
 async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -528,12 +531,10 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def edit(txt, kb=None):
         try:
-            if q.message.photo:
-                await q.edit_message_caption(caption=txt, reply_markup=kb)
-            else:
-                await q.edit_message_text(txt, reply_markup=kb)
-        except Exception as e:
-            logger.error(f"edit hatasi: {e}")
+            await q.message.delete()
+        except:
+            pass
+        await q.message.chat.send_message(txt, reply_markup=kb)
 
     if q.data == "iptal":
         no = context.user_data.get("no")
