@@ -234,10 +234,10 @@ def giris_metni(user):
     elif kalan > 0:
         ind = f"🎁 {kalan} sipariş sonra %{INDIRIM_ORANI} indirim kazanacaksin!"
     else:
-        ind = f"🎁 {INDIRIM_HER_N} sipariş yap, %{INDIRIM_ORANI} indirim kazan!"
+        ind = f"🎁 {INDIRIM_HER_N} alışveriş yap, %{INDIRIM_ORANI} indirim kazanma imkanını yakala!"
     return (
         f"👋 Merhaba, {user.first_name}!\n\n"
-        f"🛒 Toplam Siparişiniz: {t}\n"
+        f"🛒 Toplam alışverişiniz: {t}\n"
         f"{ind}\n\n"
         f"Aşağıdan devam edin:"
     )
@@ -299,7 +299,7 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.data == "giris_alisveris":
         context.user_data.clear()
         if not bot_aktif and not is_saha(q.from_user.id):
-            await q.answer("Şu an hizmet dışıyız!", show_alert=True)
+            await q.answer("Şuanda hizmet vermiyoruz, en yakın zamanda hizmet vermeye başlayacağız. Sorularınız için destek kısmına yazabilirsiniz.", show_alert=True)
             return
         aktif = [il for il, ilceler in konumlar.items()
                  if any(ilce_konum_sayisi(il, ilce) > 0 for ilce in ilceler)]
@@ -318,7 +318,7 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.delete()
         except:
             pass
-        await q.message.chat.send_message("Il seçin:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.message.chat.send_message("İl seçin:", reply_markup=InlineKeyboardMarkup(kb))
 
     elif q.data == "giris_kurallar":
         kural = ayarlar.get("market_kurali", "Henuz yazilmamis.")
@@ -573,7 +573,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bilgi   = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
         fiyat_goster = f"{fiyat_str(tl_f)} TL" if q.data == "odeme_iban" else f"{fiyat_str(usd_f)} USD"
         context.user_data["fiyat"] = tl_f if q.data == "odeme_iban" else usd_f
-        talimat = "Ödemeyi yaptiktan sonra dekont fotoğrafini gönderin." if q.data == "odeme_iban" else "Ödemeyi yaptiktan sonra TX ID (işlem kodu) yazin."
+        talimat = "Ödemeyi yaptiktan sonra dekont fotoğrafini gönderin." if q.data == "odeme_iban" else "Ödemeyi yaptiktan sonra TX ID (işlem kodu) görselini gönderin."
         ozet = (
             f"Sipariş Ozeti\n─────────────────\n"
             f"Sipariş No : {no}\n"
@@ -687,7 +687,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(S_DOSYA, siparisler)
         odeme_turu = siparisler[no].get("odeme", "")
         yontem  = "Havale/EFT" if odeme_turu == "odeme_iban" else "TRC20 (USDT)"
-        talimat = "Dekont fotografini gonderin." if odeme_turu == "odeme_iban" else "TX ID (islem kodu) yazin."
+        talimat = "Dekont fotografini gonderin." if odeme_turu == "odeme_iban" else "TX ID (islem kodu) görselini gönderin."
         await edit(
             f"Siparişiniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\n{talimat}\n(10 dakika icinde gonderin!)"
         )
