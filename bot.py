@@ -323,7 +323,15 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif q.data == "giris_kurallar":
         kural = ayarlar.get("market_kurali", "Henuz yazilmamis.")
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")]])
-        await edit(f"📋 Market Kuralları\n\n{kural}", kb)
+        try:
+            await edit(f"📋 Market Kurallari\n\n{kural}", kb)
+        except Exception:
+            # Caption limiti asilmis olabilir, yeni mesaj gonder
+            try:
+                await q.message.delete()
+            except:
+                pass
+            await q.message.chat.send_message(f"📋 Market Kurallari\n\n{kural}", reply_markup=kb)
 
     elif q.data == "giris_geri":
         foto = ayarlar.get("giris_foto_id", "")
