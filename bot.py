@@ -553,10 +553,11 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if q.data == "geri_odeme_sec":
-        # Gram seçim ekranına dön - önce context'ten, yoksa siparişten oku
+        # Gram seçim ekranına dön - context'ten oku
         il      = context.user_data.get("il", "")
         ilce    = context.user_data.get("ilce", "")
         urun_ad = context.user_data.get("urun_ad", "")
+        # context boşsa beklemedeki siparişten oku
         if not il or not urun_ad:
             for n, s in siparisler.items():
                 if str(s.get("user_id")) == str(q.from_user.id) and s.get("durum") == "beklemede":
@@ -567,8 +568,22 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     context.user_data["ilce"]    = ilce
                     context.user_data["urun_ad"] = urun_ad
                     break
+        # Hala boşsa tüm konumlardan ürün bul
+        if not il or not urun_ad:
+            await q.answer("Oturum zaman asimi! /start ile tekrar deneyin.", show_alert=True)
+            return
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
+        # gramlar boşsa rezerveli konumlar dahil ara
+        if not gramlar:
+            for k in konumlar.get(il, {}).get(ilce, []):
+                if k.get("silindi"): continue
+                u = k.get("urun", {})
+                if u.get("ad") == urun_ad:
+                    g = str(u.get("gram", ""))
+                    f = u.get("fiyat", {})
+                    gramlar[g] = f if isinstance(f, dict) else {"tl": float(f), "usd": 0}
+                    break
         kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_urun")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
