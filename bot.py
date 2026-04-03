@@ -234,12 +234,12 @@ def giris_metni(user):
     elif kalan > 0:
         ind = f"🎁 {kalan} sipariş sonra %{INDIRIM_ORANI} indirim kazanacaksin!"
     else:
-        ind = f"🎁 {INDIRIM_HER_N} sipariş yap, %{INDIRIM_ORANI} indirim kazan!"
+        ind = f"🎁 {INDIRIM_HER_N} siparişi tamamla, %{INDIRIM_ORANI} indirim kazan."
     return (
         f"👋 Merhaba, {user.first_name}!\n\n"
-        f"🛒 Toplam Siparişiniz: {t}\n"
+        f"🛒 Toplam alışverişleriniz: {t}\n"
         f"{ind}\n\n"
-        f"Aşağıdan devam edin:"
+        f"Sipariş oluşturmak için alışverişe başla butonuna tıklayın."
     )
 
 # ─── GIRIŞ ───────────────────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ async def giris_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.delete()
         except:
             pass
-        await q.message.chat.send_message("Il seçin:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.message.chat.send_message("Alışveriş yapmak istediğiniz ili seçiniz.", reply_markup=InlineKeyboardMarkup(kb))
 
     elif q.data == "giris_kurallar":
         kural = ayarlar.get("market_kurali", "Henuz yazilmamis.")
@@ -386,7 +386,7 @@ async def il_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
     kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
-    await edit(f"Il: {il}\n\nBölge seçin:", InlineKeyboardMarkup(kb))
+    await edit(f"İl: {il}\n\nAlışveriş yapmak istediğiniz bölgeyi seçiniz.", InlineKeyboardMarkup(kb))
 
 async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -399,7 +399,7 @@ async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton(f"📍 {il}", callback_data=f"il:{il}")] for il in aktif]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await q.edit_message_text("Il secin:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("Alışveriş yapmak istediğiniz ili seçiniz.", reply_markup=InlineKeyboardMarkup(kb))
         return
     ilce = q.data.split(":", 1)[1]
     il   = context.user_data["il"]
@@ -411,7 +411,7 @@ async def ilce_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
     kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-    await q.edit_message_text(f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(kb))
+    await q.edit_message_text(f"İl: {il}  |  Bölge: {ilce}\n\nAlmak istediğiniz ürünü seçiniz.", reply_markup=InlineKeyboardMarkup(kb))
 
 async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -436,7 +436,7 @@ async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
     kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
     kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
-    await q.edit_message_text(f"Il: {il}  |  Bölge: {ilce}\nÜrün: {urun_ad}\n\nMiktar seçin:", reply_markup=InlineKeyboardMarkup(kb))
+    await q.edit_message_text(f"İl: {il}  |  Bölge: {ilce}\nÜrün: {urun_ad}\n\nTalep ettiğiniz miktarı seçiniz.", reply_markup=InlineKeyboardMarkup(kb))
 
 async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -451,7 +451,7 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await q.edit_message_text("Urun secin:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("Almak istediğiniz ürünü seçiniz.", reply_markup=InlineKeyboardMarkup(kb))
         return
     gram  = q.data.split(":", 1)[1]
     il    = context.user_data["il"]
@@ -476,9 +476,9 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         ind_txt = ""
     ozet = (
-        f"Sipariş Ozeti\n─────────────────\n"
+        f"Sipariş Özeti\n─────────────────\n"
         f"Sipariş No : {no}\n"
-        f"Il         : {il}\n"
+        f"İl         : {il}\n"
         f"Bölge      : {ilce}\n"
         f"Ürün       : {urun_ad}\n"
         f"Miktar     : {gram}\n"
@@ -487,7 +487,7 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"TRC20 Fiyatı : {fiyat_str(usd_f)} USD\n"
         f"─────────────────\n"
         f"{ind_txt}\n"
-        f"Ödeme yontemini seçin:"
+        f"Ödeme yöntemini belirleyin:"
     )
     kb = [
         [InlineKeyboardButton("🏦 IBAN / Havale", callback_data="odeme_iban")],
@@ -595,7 +595,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         await q.message.chat.send_message(
-            f"Il: {il}  |  Bolge: {ilce}\nUrun: {urun_ad}\n\nMiktar secin:",
+            f"İl: {il}  |  Bölge: {ilce}\nÜrün: {urun_ad}\n\nTalep ettiğiniz miktarı seçiniz.",
             reply_markup=InlineKeyboardMarkup(kb)
         )
         return
@@ -620,7 +620,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.delete()
         except:
             pass
-        await q.message.chat.send_message(f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.message.chat.send_message(f"İl: {il}  |  Bölge: {ilce}\n\nAlmak istediğiniz ürünü seçiniz.", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if q.data == "geri_ilce":
@@ -661,9 +661,9 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bilgi   = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
         fiyat_goster = f"{fiyat_str(tl_f)} TL" if q.data == "odeme_iban" else f"{fiyat_str(usd_f)} USD"
         context.user_data["fiyat"] = tl_f if q.data == "odeme_iban" else usd_f
-        talimat = "Ödemeyi yaptiktan sonra dekont fotoğrafini gönderin." if q.data == "odeme_iban" else "Ödemeyi yaptiktan sonra TX ID (işlem kodu) yazin."
+        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if q.data == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) görselini gönderiniz."
         ozet = (
-            f"Sipariş Ozeti\n─────────────────\n"
+            f"Sipariş Özeti\n─────────────────\n"
             f"Sipariş No : {no}\n"
             f"Ürün       : {urun_ad} {gram}\n"
             f"Fiyat      : {fiyat_goster}\n"
@@ -718,16 +718,16 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         aktif   = musteri_indirim_var_mi(uid)
         ind_txt = f"🎉 %{INDIRIM_ORANI} INDIRIM UYGULANDL!\n" if aktif else (f"🎁 {kalan} sipariş sonra indirim!\n" if kalan > 0 else "")
         ozet = (
-            f"Sipariş Ozeti\n─────────────────\n"
+            f"Sipariş Özeti\n─────────────────\n"
             f"Sipariş No : {no}\n"
-            f"Il         : {il}\n"
+            f"İl         : {il}\n"
             f"Bölge      : {ilce}\n"
             f"Ürün       : {urun_ad}\n"
             f"Miktar     : {gram}\n"
             f"─────────────────\n"
             f"IBAN Fiyatı : {fiyat_str(tl_f)} TL\n"
             f"TRC20 Fiyatı : {fiyat_str(usd_f)} USD\n"
-            f"─────────────────\n{ind_txt}\nÖdeme yontemini seçin:"
+            f"─────────────────\n{ind_txt}\nÖdeme yöntemini belirleyin:"
         )
         kb = [
             [InlineKeyboardButton("🏦 IBAN / Havale", callback_data="odeme_iban")],
@@ -784,7 +784,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(S_DOSYA, siparisler)
         odeme_turu = siparisler[no].get("odeme", "")
         yontem  = "Havale/EFT" if odeme_turu == "odeme_iban" else "TRC20 (USDT)"
-        talimat = "Dekont fotografini gonderin." if odeme_turu == "odeme_iban" else "TX ID (islem kodu) yazin."
+        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if odeme_turu == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) görselini gönderiniz."
         await edit(
             f"Siparişiniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\n{talimat}\n(10 dakika icinde gonderin!)"
         )
