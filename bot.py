@@ -671,13 +671,22 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_ilce")],
             [InlineKeyboardButton("❌ İptal",           callback_data="iptal")],
         ]
+        # Ürün fotosu varsa fotoyla gönder
+        urun_foto = None
+        for hid, hu in havuz.items():
+            if isinstance(hu, dict) and hu.get("ad") == urun_ad and hu.get("foto_id"):
+                urun_foto = hu["foto_id"]
+                break
         try:
-            await q.edit_message_text(ozet, reply_markup=InlineKeyboardMarkup(kb))
+            await q.message.delete()
         except:
+            pass
+        if urun_foto:
             try:
-                await q.message.delete()
+                await q.message.chat.send_photo(photo=urun_foto, caption=ozet, reply_markup=InlineKeyboardMarkup(kb))
             except:
-                pass
+                await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
+        else:
             await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
         return
     if q.data == "onayla":
