@@ -414,14 +414,16 @@ async def urun_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
-        await q.edit_message_text("İptal edildi.")
+        await q.edit_message_text("Iptal edildi.")
+        return
     if q.data == "geri_il":
         il = context.user_data["il"]
         aktif_ilceler = [ilce for ilce in konumlar.get(il, {}) if ilce_konum_sayisi(il, ilce) > 0]
         kb = [[InlineKeyboardButton(f"📌 {ilce}", callback_data=f"ilce:{ilce}")] for ilce in aktif_ilceler]
-        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
-        kb.append([InlineKeyboardButton("❌ İptal", callback_data="iptal")])
-        await q.edit_message_text("Bölge seçin:", reply_markup=InlineKeyboardMarkup(kb))
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="giris_geri")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        await q.edit_message_text("Bolge secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return
     urun_ad = q.data.split(":", 1)[1]
     il      = context.user_data["il"]
     ilce    = context.user_data["ilce"]
@@ -437,7 +439,8 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if q.data == "iptal":
-        await q.edit_message_text("İptal edildi.")
+        await q.edit_message_text("Iptal edildi.")
+        return
     if q.data == "geri_ilce":
         il   = context.user_data["il"]
         ilce = context.user_data["ilce"]
@@ -445,7 +448,8 @@ async def gram_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
-        await q.edit_message_text("Ürün seçin:", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text("Urun secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return
     gram  = q.data.split(":", 1)[1]
     il    = context.user_data["il"]
     ilce  = context.user_data["ilce"]
@@ -547,36 +551,13 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await edit("İptal edildi.")
         return
 
-    if q.data in ("geri_ilce", "geri_odeme_sec"):
+    if q.data == "geri_odeme_sec":
+        # Gram seçim ekranına dön (fotosuz)
         il      = context.user_data.get("il", "")
         ilce    = context.user_data.get("ilce", "")
         urun_ad = context.user_data.get("urun_ad", "")
-        tl_f    = context.user_data.get("fiyat_tl", 0)
-        usd_f   = context.user_data.get("fiyat_usd", 0)
-        # context bossa siparisten oku
-        if not il or not urun_ad:
-            uid2 = q.from_user.id
-            for n, s in siparisler.items():
-                if str(s["user_id"]) == str(uid2) and s["durum"] == "beklemede":
-                    il      = s.get("il", "")
-                    ilce    = s.get("ilce", "")
-                    urun_ad = s.get("urun_ad", "")
-                    context.user_data["il"]    = il
-                    context.user_data["ilce"]  = ilce
-                    context.user_data["urun_ad"] = urun_ad
-                    break
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
-        ozet = (
-            f"Siparis Ozeti\n─────────────────\n"
-            f"Il: {il}  |  Bolge: {ilce}\n"
-            f"Urun: {urun_ad}\n"
-            f"─────────────────\n"
-            f"IBAN Fiyati : {fiyat_str(tl_f)} TL\n"
-            f"TRC20 Fiyati : {fiyat_str(usd_f)} USD\n"
-            f"─────────────────\n"
-            f"Miktar secin:"
-        )
         kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
         kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
@@ -584,19 +565,38 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.delete()
         except:
             pass
-        # Ürün fotosu varsa fotoyla gönder
+        await q.message.chat.send_message(
+            f"Il: {il}  |  Bolge: {ilce}\nUrun: {urun_ad}\n\nMiktar secin:",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        return
+
+    if q.data == "geri_ilce":
+        il      = context.user_data.get("il", "")
+        ilce    = context.user_data.get("ilce", "")
+        urun_ad = context.user_data.get("urun_ad", "")
+        urunler = ilce_urunler(il, ilce)
+        gramlar = urunler.get(urun_ad, {})
+        kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        try:
+            await q.message.delete()
+        except:
+            pass
         urun_foto = None
         for hid, hu in havuz.items():
             if isinstance(hu, dict) and hu.get("ad") == urun_ad and hu.get("foto_id"):
                 urun_foto = hu["foto_id"]
                 break
+        ozet2 = f"Urun: {urun_ad}\nMiktar secin:"
         if urun_foto:
             try:
-                await q.message.chat.send_photo(photo=urun_foto, caption=ozet, reply_markup=InlineKeyboardMarkup(kb))
+                await q.message.chat.send_photo(photo=urun_foto, caption=ozet2, reply_markup=InlineKeyboardMarkup(kb))
             except:
-                await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
+                await q.message.chat.send_message(ozet2, reply_markup=InlineKeyboardMarkup(kb))
         else:
-            await q.message.chat.send_message(ozet, reply_markup=InlineKeyboardMarkup(kb))
+            await q.message.chat.send_message(ozet2, reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if q.data in ("odeme_iban", "odeme_trc20"):
