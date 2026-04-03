@@ -553,6 +553,18 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         urun_ad = context.user_data.get("urun_ad", "")
         tl_f    = context.user_data.get("fiyat_tl", 0)
         usd_f   = context.user_data.get("fiyat_usd", 0)
+        # context bossa siparisten oku
+        if not il or not urun_ad:
+            uid2 = q.from_user.id
+            for n, s in siparisler.items():
+                if str(s["user_id"]) == str(uid2) and s["durum"] == "beklemede":
+                    il      = s.get("il", "")
+                    ilce    = s.get("ilce", "")
+                    urun_ad = s.get("urun_ad", "")
+                    context.user_data["il"]    = il
+                    context.user_data["ilce"]  = ilce
+                    context.user_data["urun_ad"] = urun_ad
+                    break
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
         ozet = (
