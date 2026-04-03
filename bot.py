@@ -569,7 +569,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
         kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
-        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_urun")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         try:
             await q.message.delete()
@@ -581,6 +581,29 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if q.data == "geri_urun":
+        # Ürün listesine dön
+        il   = context.user_data.get("il", "")
+        ilce = context.user_data.get("ilce", "")
+        if not il:
+            for n, s in siparisler.items():
+                if str(s.get("user_id")) == str(q.from_user.id) and s.get("durum") == "beklemede":
+                    il   = s.get("il", "")
+                    ilce = s.get("ilce", "")
+                    context.user_data["il"]   = il
+                    context.user_data["ilce"] = ilce
+                    break
+        urunler = ilce_urunler(il, ilce)
+        kb = [[InlineKeyboardButton(ad, callback_data=f"urun:{ad}")] for ad in urunler.keys()]
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_il")])
+        kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
+        try:
+            await q.message.delete()
+        except:
+            pass
+        await q.message.chat.send_message(f"Il: {il}  |  Bolge: {ilce}\n\nUrun secin:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
     if q.data == "geri_ilce":
         il      = context.user_data.get("il", "")
         ilce    = context.user_data.get("ilce", "")
@@ -588,7 +611,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         urunler = ilce_urunler(il, ilce)
         gramlar = urunler.get(urun_ad, {})
         kb = [[InlineKeyboardButton(f"{g}  —  {miktar_fiyat_str(f)}", callback_data=f"gram:{g}")] for g, f in gramlar.items()]
-        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_ilce")])
+        kb.append([InlineKeyboardButton("⬅️ Geri", callback_data="geri_urun")])
         kb.append([InlineKeyboardButton("❌ Iptal", callback_data="iptal")])
         try:
             await q.message.delete()
@@ -1974,7 +1997,7 @@ def main():
     app.add_handler(CallbackQueryHandler(ilce_sec,  pattern=r"^(ilce:|geri_il)"))
     app.add_handler(CallbackQueryHandler(urun_sec,  pattern=r"^(urun:)"))
     app.add_handler(CallbackQueryHandler(gram_sec,  pattern=r"^gram:"))
-    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme_sec|iptal)"))
+    app.add_handler(CallbackQueryHandler(odeme_sec, pattern=r"^(odeme_iban|odeme_trc20|geri_ilce|geri_odeme_sec|geri_urun|iptal)"))
     app.add_handler(CallbackQueryHandler(odeme,     pattern=r"^(onayla|geri_odeme|iptal)"))
 
     app.add_handler(CallbackQueryHandler(adm_cb,     pattern=r"^(ks:|ksg:|yeni_k:|tamam$|onay:|ret:|konum_ekle_menu$)"))
