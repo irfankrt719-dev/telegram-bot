@@ -564,9 +564,12 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     il      = s.get("il", "")
                     ilce    = s.get("ilce", "")
                     urun_ad = s.get("urun_ad", "")
-                    context.user_data["il"]      = il
-                    context.user_data["ilce"]    = ilce
-                    context.user_data["urun_ad"] = urun_ad
+                    gram    = s.get("gram", "")
+                    context.user_data["il"]       = il
+                    context.user_data["ilce"]     = ilce
+                    context.user_data["urun_ad"]  = urun_ad
+                    context.user_data["gram"]     = gram
+                    context.user_data["no"]       = n
                     break
         # Hala boşsa tüm konumlardan ürün bul
         if not il or not urun_ad:
@@ -729,7 +732,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [
             [InlineKeyboardButton("🏦 IBAN / Havale", callback_data="odeme_iban")],
             [InlineKeyboardButton("💎 TRC20 (USDT)",  callback_data="odeme_trc20")],
-            [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_ilce")],
+            [InlineKeyboardButton("⬅️ Geri",           callback_data="geri_odeme_sec")],
             [InlineKeyboardButton("❌ İptal",           callback_data="iptal")],
         ]
         # Ürün fotosu varsa fotoyla gönder
