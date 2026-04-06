@@ -187,9 +187,12 @@ def indirimli_fiyat(f, uid):
 def musteri_guncelle(uid, ad=""):
     k = str(uid)
     if k not in musteriler:
-        musteriler[k] = {"tamamlanan": 0, "ad": ad}
+        musteriler[k] = {"tamamlanan": 0, "ad": ad, "kayitli": True}
     if ad:
         musteriler[k]["ad"] = ad
+    # kayitli alanini koru
+    if "kayitli" not in musteriler[k]:
+        musteriler[k]["kayitli"] = True
     musteriler[k]["tamamlanan"] += 1
     kaydet(M_DOSYA, musteriler)
 
@@ -1226,7 +1229,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"'{ad}' silindi!")
 
     elif d == "u_gramaj_devam":
-        islem = adm.get(ADMIN_ID, {})
+        islem = adm.get(q.from_user.id, {})
         tip   = islem.get("tip", "gram")
         adm[q.from_user.id]["adim"] = "u_miktar"
         ipucu = {"gram": "örn: 7g", "tekli": "örn: 10 Adet", "kutu": "örn: 3 Kutu"}.get(tip, "")
@@ -1234,7 +1237,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif d == "u_gorsel_ekle":
         # Önce kaydet, sonra fotoğraf iste
-        islem     = adm.get(ADMIN_ID, {})
+        islem     = adm.get(q.from_user.id, {})
         ad        = islem.get("urun_ad", "")
         hid       = islem.get("hid", f"h{int(time.time())}")
         tip       = islem.get("tip", "gram")
@@ -1245,7 +1248,7 @@ async def urun_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"'{ad}' kaydedildi!\n\nŞimdi ürün fotoğrafini gönder:")
 
     elif d == "u_gramaj_kaydet":
-        islem    = adm.get(ADMIN_ID, {})
+        islem    = adm.get(q.from_user.id, {})
         ad       = islem.get("urun_ad", "")
         hid      = islem.get("hid", f"h{int(time.time())}")
         tip      = islem.get("tip", "gram")
@@ -1362,23 +1365,23 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     kb = [[InlineKeyboardButton(f"✅ Onayla — {no}", callback_data=f"onay:{no}"),
                            InlineKeyboardButton(f"❌ Reddet — {no}", callback_data=f"ret:{no}")]]
                     for aid, a in adminler.items():
-                        if a.get("seviye") != "super":
+                        if a.get("seviye") == "yonetici":
                             try:
                                 await context.bot.send_message(
                                     chat_id=int(aid),
                                     text=(
                                         f"💎 Yeni TRC20 TX ID!\nNo: {no}\n"
-                                        f"Il/Ilce: {s.get('il','?')}/{s.get('ilce','?')}\n"
-                                        f"Urun: {s.get('urun','?')}\n"
+                                        f"İl/İlçe: {s.get('il','?')}/{s.get('ilce','?')}\n"
+                                        f"Ürün: {s.get('urun','?')}\n"
                                         f"Fiyat: {fiyat_str(s.get('fiyat',0))} USD\n\n"
-                                        f"TX ID: {txid}\n\nOnaylamak icin:"
+                                        f"TX ID: {txid}\n\nOnaylamak için:"
                                     ),
                                     reply_markup=InlineKeyboardMarkup(kb)
                                 )
                             except Exception as e:
                                 logger.error(f"TxID bildirimi gonderilemedi: {e}")
+
                     await update.message.reply_text(f"TX ID alındı! Sipariş No: {no}\n\nAdmin onayı bekleniyor.")
-                    return
                     return
                 else:
                     await update.message.reply_text("Geçersiz TX ID. Lütfen doğru TX ID kodunu yazın (min 10 karakter).")
@@ -1936,6 +1939,9 @@ async def rezerve_kontrol_async(bot):
         rezerve_zaman = s.get("rezerve_zaman")
         if not rezerve_zaman:
             continue
+        # Dekont veya TX ID gönderilmişse iptal etme
+        if s.get("dekont_gonderildi") or s.get("txid"):
+            continue
         if simdi - rezerve_zaman >= REZERVE_SURE:
             iptal_edilecek.append(no)
     for no in iptal_edilecek:
@@ -1970,6 +1976,28 @@ async def rezerve_kontrol_async(bot):
             except Exception as e:
                 logger.error(f"İptal bildirimi gönderilemedi: {e}")
         logger.info(f"Sipariş {no} otomatik iptal edildi.")
+
+
+async def gecersiz_icerik(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fotoğraf dışı içerik gelince kontrol et"""
+    uid = update.effective_user.id
+    if is_saha(uid):
+        return
+    # Beklemedeki IBAN siparişi var mı?
+    no = context.user_data.get("no")
+    if not no:
+        for n, s in siparisler.items():
+            if str(s.get("user_id")) == str(uid) and s.get("durum") == "beklemede":
+                no = n
+                break
+    if no and no in siparisler:
+        s = siparisler[no]
+        if s.get("odeme") == "odeme_iban" and not s.get("dekont_gonderildi"):
+            await update.message.reply_text(
+                "⚠️ Geçersiz içerik!\n\n"
+                "Lütfen dekontun ekran fotoğrafını gönderin."
+            )
+            return
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 def main():
@@ -2028,6 +2056,8 @@ def main():
 
     # Mesaj handlers
     app.add_handler(MessageHandler(filters.PHOTO,    foto_al))
+    app.add_handler(MessageHandler(filters.Document.ALL, gecersiz_icerik))
+    app.add_handler(MessageHandler(filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Sticker.ALL, gecersiz_icerik))
     app.add_handler(MessageHandler(filters.LOCATION, konum_al))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, metin))
 
