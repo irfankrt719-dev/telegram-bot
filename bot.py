@@ -664,7 +664,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bilgi   = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
         fiyat_goster = f"{fiyat_str(tl_f)} TL" if q.data == "odeme_iban" else f"{fiyat_str(usd_f)} USD"
         context.user_data["fiyat"] = tl_f if q.data == "odeme_iban" else usd_f
-        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if q.data == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) görselini gönderiniz."
+        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if q.data == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) gönderiniz."
         ozet = (
             f"Sipariş Özeti\n─────────────────\n"
             f"Sipariş No : {no}\n"
@@ -787,7 +787,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(S_DOSYA, siparisler)
         odeme_turu = siparisler[no].get("odeme", "")
         yontem  = "Havale/EFT" if odeme_turu == "odeme_iban" else "TRC20 (USDT)"
-        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if odeme_turu == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) görselini gönderiniz."
+        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if odeme_turu == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) gönderiniz."
         await edit(
             f"Siparişiniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\n{talimat}\n(10 dakika icinde gonderin!)"
         )
