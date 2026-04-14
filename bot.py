@@ -52,7 +52,8 @@ AYARLAR_VARSAYILAN = {
     "giris_foto_id": "",
     "kanal_link":    "https://t.me/kanaliniz",
     "destek_link":   "https://t.me/destekkullanici",
-    "market_kurali": "Market kurallari henuz yazilmamis."
+    "market_kurali": "Market kurallari henuz yazilmamis.",
+    "on_mesaj": "🟢 Market açıldı! Sipariş verebilirsiniz."
 }
 
 INDIRIM_HER_N = 5
@@ -664,7 +665,7 @@ async def odeme_sec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bilgi   = odeme_bilgileri.get("iban") if q.data == "odeme_iban" else odeme_bilgileri.get("trc20")
         fiyat_goster = f"{fiyat_str(tl_f)} TL" if q.data == "odeme_iban" else f"{fiyat_str(usd_f)} USD"
         context.user_data["fiyat"] = tl_f if q.data == "odeme_iban" else usd_f
-        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if q.data == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) gönderiniz."
+        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if q.data == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) görselini gönderiniz."
         ozet = (
             f"Sipariş Özeti\n─────────────────\n"
             f"Sipariş No : {no}\n"
@@ -787,7 +788,7 @@ async def odeme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kaydet(S_DOSYA, siparisler)
         odeme_turu = siparisler[no].get("odeme", "")
         yontem  = "Havale/EFT" if odeme_turu == "odeme_iban" else "TRC20 (USDT)"
-        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if odeme_turu == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) gönderiniz."
+        talimat = "Ödemeyi yaptıktan sonra dekont fotoğrafı gönderiniz." if odeme_turu == "odeme_iban" else "Ödemeyi yaptıktan sonra TX ID (işlem kodu) görselini gönderiniz."
         await edit(
             f"Siparişiniz alindi!\n\nSiparis No: {no}\nOdeme: {yontem}\n\n{talimat}\n(10 dakika icinde gonderin!)"
         )
@@ -1024,10 +1025,13 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         no = d.split(":")[1]
         s  = siparisler.get(no)
         if not s:
-            await q.edit_message_caption("Sipariş bulunamadı.")
+            try:
+                await q.edit_message_caption("Siparis bulunamadi.")
+            except:
+                await q.edit_message_text("Siparis bulunamadi.")
             return
-        if s["durum"] in ("işleniyor", "tamamlandı", "reddedildi"):
-            durum_txt = {"işleniyor": "işleniyor", "tamamlandı": "onaylandı", "reddedildi": "reddedildi"}
+        if s["durum"] in ("isleniyor", "tamamlandi", "reddedildi"):
+            durum_txt = {"isleniyor": "isleniyor", "tamamlandi": "onaylandı", "reddedildi": "reddedildi"}
             await q.answer(f"Bu sipariş zaten {durum_txt.get(s['durum'], s['durum'])}!", show_alert=True)
             return
         il = s["il"]; ilce = s["ilce"]
@@ -1041,9 +1045,12 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not k:
             k = ilce_konum_bul(il, ilce, s["urun_ad"], s["gram"])
         if not k:
-            await q.edit_message_caption(f"{il}/{ilce} icin müsait konum yok!")
+            try:
+                await q.edit_message_caption(f"{il}/{ilce} icin musait konum yok!")
+            except:
+                await q.edit_message_text(f"{il}/{ilce} icin musait konum yok!")
             return
-        siparisler[no]["durum"] = "işleniyor"
+        siparisler[no]["durum"] = "isleniyor"
         kaydet(S_DOSYA, siparisler)
         mid = s["user_id"]
         await context.bot.send_photo(chat_id=mid, photo=k["foto_id"],
@@ -1057,7 +1064,7 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 km.pop("rezerve_no", None)
                 break
         kaydet(K_DOSYA, konumlar)
-        siparisler[no]["durum"] = "tamamlandı"
+        siparisler[no]["durum"] = "tamamlandi"
         kaydet(S_DOSYA, siparisler)
         musteri_guncelle(mid, s.get("musteri_ad", ""))
         yeni_t    = musteri_tamamlanan(mid)
@@ -1070,7 +1077,13 @@ async def adm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"%{INDIRIM_ORANI} indirim için {yeni_k} siparişin kaldi!")
         kalan = ilce_konum_sayisi(il, ilce)
         uyari = f"\n\n{il}/{ilce}: {kalan} konum kaldı!" if kalan <= 3 else ""
-        await q.edit_message_caption(f"✅ Tamamlandı! {no} — {yeni_t}. sipariş{uyari}")
+        try:
+            await q.edit_message_caption(f"✅ Tamamlandi! {no} — {yeni_t}. siparis{uyari}")
+        except:
+            try:
+                await q.edit_message_text(f"✅ Tamamlandi! {no} — {yeni_t}. siparis{uyari}")
+            except:
+                pass
         # Diğer non-super adminlere bildir
         for aid, a in adminler.items():
             if int(aid) != q.from_user.id and a.get("seviye") != "super":
@@ -1483,6 +1496,13 @@ async def metin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Geçersiz! Sayi gir (örn: 14)")
             return
 
+        elif a["adim"] == "on_mesaj":
+            ayarlar["on_mesaj"] = txt
+            kaydet(A_DOSYA, ayarlar)
+            del adm[uid]
+            await update.message.reply_text(f"✅ /on mesajı güncellendi:\n\n{txt}")
+            return
+
         elif a["adim"] == "ay_kanal":
             ayarlar["kanal_link"] = txt
             kaydet(A_DOSYA, ayarlar)
@@ -1561,6 +1581,16 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 u    = k.get("urun", {})
                 rzv  = " 🔒 REZERVE" if k.get("rezerve") else ""
                 msg += f"\n#{n}  {u.get('ad','?')} {u.get('gram','?')} — {miktar_fiyat_str(u.get('fiyat',{}))}  {rzv}\n  📍 {k.get('lat',0):.4f}, {k.get('lon',0):.4f}"
+                # Fotoğraf varsa gönder
+                foto = k.get("foto_id", "")
+                if foto:
+                    try:
+                        await update.message.reply_photo(
+                            photo=foto,
+                            caption=f"#{n} {u.get('ad','?')} {u.get('gram','?')}{rzv}"
+                        )
+                    except Exception:
+                        msg += " (foto geçersiz)"
             if n == 0:
                 msg += "\n\nAktif konum yok."
             await update.message.reply_text(msg)
@@ -1581,14 +1611,23 @@ async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not musteriler:
         await update.message.reply_text("Henuz müşteri yok.")
         return
-    msg = "Müşteri Listesi\n─────────────────\n"
+    satirlar = ["Müşteri Listesi\n─────────────────"]
     for uid, m in sorted(musteriler.items(), key=lambda x: -x[1].get("tamamlanan", 0)):
         t     = m.get("tamamlanan", 0)
         ad    = m.get("ad", "?")
         kalan = musteri_kalan(int(uid))
-        durum = "🎉 INDIRIM HAKKI VAR!" if t > 0 and t % INDIRIM_HER_N == 0 else f"{kalan} sipariş kaldi"
-        msg  += f"\n👤 {ad}\n  Tamamlanan: {t} | {durum}\n"
-    await update.message.reply_text(msg)
+        durum = "🎉 INDIRIM HAKKI VAR!" if t > 0 and t % INDIRIM_HER_N == 0 else f"{kalan} siparis kaldi"
+        satirlar.append(f"\n👤 {ad}\n  Tamamlanan: {t} | {durum}")
+    # 4096 karakter limitini aşmamak için parçalara böl
+    msg = ""
+    for satir in satirlar:
+        if len(msg) + len(satir) > 3800:
+            await update.message.reply_text(msg)
+            msg = satir
+        else:
+            msg += satir
+    if msg:
+        await update.message.reply_text(msg)
 
 
 # ─── ADMİN YÖNETİMİ ──────────────────────────────────────────────────────────
@@ -1599,7 +1638,7 @@ async def ciro_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Aktif siparişlerden hesapla
     aktif_tl = aktif_usd = 0.0
     for no, s in siparisler.items():
-        if s.get("durum") == "tamamlandı":
+        if s.get("durum") == "tamamlandi":
             f = float(s.get("fiyat", 0))
             if s.get("odeme") == "odeme_iban":
                 aktif_tl += f
@@ -1788,7 +1827,7 @@ async def gunsonu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     urun_sayac = {}
     for no, s in siparisler.items():
         toplam += 1
-        if s["durum"] == "tamamlandı":
+        if s["durum"] == "tamamlandi":
             tamamlanan += 1
             f = float(s.get("fiyat", 0))
             odeme = s.get("odeme", "")
@@ -1833,7 +1872,7 @@ async def gunsonu_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         gun_tl = 0.0
         gun_usd = 0.0
         for no, s in siparisler.items():
-            if s.get("durum") == "tamamlandı":
+            if s.get("durum") == "tamamlandi":
                 f = float(s.get("fiyat", 0))
                 if s.get("odeme") == "odeme_iban":
                     gun_tl += f
@@ -1902,6 +1941,18 @@ async def yedek_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─── BOT AKTİFLİK ────────────────────────────────────────────────────────────
+
+async def on_mesaj_ayar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_yonetici(update.effective_user.id):
+        await update.message.reply_text("Yetkisiz!")
+        return
+    adm[update.effective_user.id] = {"adim": "on_mesaj"}
+    mevcut = ayarlar.get("on_mesaj", "")
+    await update.message.reply_text(
+        f"Mevcut /on mesajı:\n\n{mevcut}\n\n"
+        f"Yeni mesajı yazın:"
+    )
+
 async def bot_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global bot_aktif
     if not is_yonetici(update.effective_user.id):
@@ -1909,6 +1960,19 @@ async def bot_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     bot_aktif = True
     await update.message.reply_text("✅ Bot aktif! Siparişler alinabilir.")
+    # Tüm kayıtlı müşterilere mesaj gönder
+    mesaj = ayarlar.get("on_mesaj", "")
+    if mesaj and musteriler:
+        basarili = 0
+        for uid, m in musteriler.items():
+            if not m.get("kayitli"):
+                continue
+            try:
+                await context.bot.send_message(chat_id=int(uid), text=mesaj)
+                basarili += 1
+            except Exception as e:
+                logger.error(f"On mesaji gonderilemedi {uid}: {e}")
+        await update.message.reply_text(f"📢 {basarili} müşteriye mesaj gönderildi.")
 
 async def bot_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global bot_aktif
@@ -2030,6 +2094,7 @@ def main():
     app.add_handler(CommandHandler("id",          id_goster))
     app.add_handler(CommandHandler("yedek",       yedek_al))
     app.add_handler(CommandHandler("on",          bot_on))
+    app.add_handler(CommandHandler("on_mesaj",    on_mesaj_ayar))
     app.add_handler(CommandHandler("off",         bot_off))
     app.add_handler(CommandHandler("durum",       bot_durum))
     app.add_handler(CommandHandler("kod_olustur", kod_olustur))
