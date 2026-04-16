@@ -144,7 +144,9 @@ def ilce_konum_bul(il, ilce, urun_ad, gram):
         if k.get("silindi"):
             continue
         u = k.get("urun", {})
-        if u.get("ad") == urun_ad and str(u.get("gram")) == str(gram):
+        gram_esles = str(u.get("gram", "")).strip() == str(gram).strip()
+        ad_esles   = str(u.get("ad", "")).strip() == str(urun_ad).strip()
+        if ad_esles and gram_esles:
             return k
     return None
 
@@ -163,7 +165,9 @@ def ilce_bos_konum_bul(il, ilce, urun_ad, gram):
         if k.get("silindi") or k.get("rezerve"):
             continue
         u = k.get("urun", {})
-        if u.get("ad") == urun_ad and str(u.get("gram")) == str(gram):
+        gram_esles = str(u.get("gram", "")).strip() == str(gram).strip()
+        ad_esles   = str(u.get("ad", "")).strip() == str(urun_ad).strip()
+        if ad_esles and gram_esles:
             return k
     return None
 
@@ -1598,13 +1602,21 @@ async def konumlar_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def siparisler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_yonetici(update.effective_user.id): return
     if not siparisler:
-        await update.message.reply_text("Henuz sipariş yok.")
+        await update.message.reply_text("Henuz siparis yok.")
         return
-    e   = {"beklemede": "⏳", "isleniyor": "🔄", "tamamlandi": "✅"}
-    msg = "Siparişler\n─────────────────\n"
+    e   = {"beklemede": "⏳", "isleniyor": "🔄", "tamamlandi": "✅", "reddedildi": "❌"}
+    satirlar = ["Siparişler\n─────────────────"]
     for no, s in siparisler.items():
-        msg += f"\n{e.get(s['durum'],'?')} {no}\n  {s.get('il','')}/{s.get('ilce','')} | {s['urun']} | {fiyat_str(s['fiyat'])}\n"
-    await update.message.reply_text(msg)
+        satirlar.append(f"\n{e.get(s.get('durum',''),'?')} {no}\n  {s.get('il','')}/{s.get('ilce','')} | {s.get('urun','')} | {fiyat_str(s.get('fiyat',0))}")
+    msg = ""
+    for satir in satirlar:
+        if len(msg) + len(satir) > 3800:
+            await update.message.reply_text(msg)
+            msg = satir
+        else:
+            msg += satir
+    if msg:
+        await update.message.reply_text(msg)
 
 async def musteriler_goster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_yonetici(update.effective_user.id): return
@@ -1988,6 +2000,63 @@ async def bot_durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     durum = "✅ Aktif" if bot_aktif else "🚫 Kapalı"
     await update.message.reply_text(f"Bot Durumu: {durum}")
 
+
+async def siparis_detay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_yonetici(update.effective_user.id): return
+    args = context.args
+    if not args:
+        await update.message.reply_text("Kullanim: /siparis SP12345678")
+        return
+    no = args[0].upper().strip()
+    s  = siparisler.get(no)
+    if not s:
+        await update.message.reply_text(f"Sipariş bulunamadi: {no}")
+        return
+    durum_emoji = {"beklemede": "⏳", "isleniyor": "🔄", "tamamlandi": "✅", "reddedildi": "❌", "iptal": "🚫"}
+    durum = s.get("durum", "?")
+    odeme_turu = "IBAN / Havale" if s.get("odeme") == "odeme_iban" else "TRC20 (USDT)"
+    msg = (
+        f"📋 Sipariş Detayı\n─────────────────\n"
+        f"No       : {no}\n"
+        f"Durum    : {durum_emoji.get(durum, '?')} {durum}\n"
+        f"─────────────────\n"
+        f"Müşteri  : {s.get('musteri_ad', '?')} (ID: {s.get('user_id', '?')})\n"
+        f"İl/İlçe  : {s.get('il', '?')}/{s.get('ilce', '?')}\n"
+        f"Ürün     : {s.get('urun', '?')}\n"
+        f"Fiyat    : {fiyat_str(s.get('fiyat', 0))} ({'TL' if s.get('odeme') == 'odeme_iban' else 'USD'})\n"
+        f"Ödeme    : {odeme_turu}\n"
+    )
+    if s.get("txid"):
+        msg += f"TX ID    : {s.get('txid')}\n"
+    msg += f"─────────────────\n"
+    # Konumu bul
+    il   = s.get("il", "")
+    ilce = s.get("ilce", "")
+    konum_foto = None
+    konum_lat  = None
+    konum_lon  = None
+    for km in konumlar.get(il, {}).get(ilce, []):
+        if km.get("rezerve_no") == no or (durum == "tamamlandi" and km.get("silindi")):
+            konum_foto = km.get("foto_id", "")
+            konum_lat  = km.get("lat")
+            konum_lon  = km.get("lon")
+            break
+    if konum_lat:
+        msg += f"Konum    : {konum_lat:.4f}, {konum_lon:.4f}\n"
+    await update.message.reply_text(msg)
+    # Konum fotosu varsa gönder
+    if konum_foto:
+        try:
+            await update.message.reply_photo(photo=konum_foto, caption="Konum fotoğrafı")
+        except:
+            await update.message.reply_text("(Konum fotoğrafı geçersiz)")
+    # Konum koordinatı varsa gönder
+    if konum_lat and konum_lon:
+        try:
+            await update.message.reply_location(latitude=konum_lat, longitude=konum_lon)
+        except:
+            pass
+
 # ─── OTOMATİK İPTAL ──────────────────────────────────────────────────────────
 REZERVE_SURE = 10 * 60  # 10 dakika saniye cinsinden
 
@@ -2082,6 +2151,7 @@ def main():
     # Komutlar
     app.add_handler(CommandHandler("start",       start))
     app.add_handler(CommandHandler("siparisler",  siparisler_goster))
+    app.add_handler(CommandHandler("siparis",      siparis_detay))
     app.add_handler(CommandHandler("konumlar",    konumlar_goster))
     app.add_handler(CommandHandler("konum_ekle",  konum_ekle))
     app.add_handler(CommandHandler("urunler",     urunler_goster))
